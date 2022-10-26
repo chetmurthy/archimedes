@@ -1,7 +1,7 @@
 
 (** A 2D plotting library with various backends.
 
-    @version 0.4.7
+    @version 0.4.9
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke
@@ -235,11 +235,16 @@ sig
       component [r], green component [g] and blue component [b]. All values
       must be between [0.] and [1.]; raises [Invalid_argument] otherwise.*)
 
-  val hex : int -> t
-  (** [hex c] returns a color from its specification in "hexadecimal
-      form", that is as [0xRRGGBB] where [R], [G] and [B] are
-      hexadecimal digits giving the red, green, and blue components.  It
-      is the form used by [Graphics]. *)
+  val int : int -> t
+  (** [int c] returns a color from its specification as an integer whose
+      value is [0xRRGGBB] where [R], [G] and [B] are hexadecimal
+      digits giving the red, green, and blue components of that color.
+
+      It is the form used by [Graphics]. *)
+
+  val hue : float -> t
+  (** [hue h] returns a color of given hue [h] in the interval \[0 : 360.\[
+      and of maximal luminance. *)
 
   val r : t -> float
   (** Returns the red component of a color.*)
@@ -1389,28 +1394,28 @@ sig
 
 
   type labels =
-  | No_label
-  | Text of (string * float) array (* TODO use lists *)
-  | Number of int
-  | Expnumber of float
-  | Expnumber_named of float * string
+  | No_label (** [No_label] just draw a vertical bar without any text *)
+  | Text of (string * float) array (** Not yet implemented *)
+  | Number of int (** [Number n] draw number labels using [n] digits *)
+  | Expnumber of float (** Not yet implemented *)
+  | Expnumber_named of float * string (** Not yet implemented*)
   | Custom of (float -> string)
+  (** [Custom f] for labeling with a function [f] *)
 
   type t =
   | Fixed of labels * float list
+  (** Not Yet implemented *)
   | Fixed_norm of labels * float list
+  (** Not Yet implemented *)
   | Equidistants of labels * float * float * int
+  (** [Archimede.Tics.Equidistants (label, start, step, n)]
+      draws [Major Tics] from [start] equidistants of [step] along the axe
+      and with [n] [Minor Tics] between each of them and the labels defined
+      with [label] *)
   | Auto of labels
+  (** [Archimede.Tics.Auto label] draws [Major Tics] to fit the axe and the
+      [label] automaticaly*)
 
-  type tic =
-  | Major of string * float
-  | Minor of float
-
-  val tics: ?log:bool -> float -> float -> t -> tic list
-  (** [tics xmin xmax spec] return a description of the tics for the
-      interval [xmin .. xmax] according to the specification [spec].
-
-      @param log whether log scales are desired.  Default: [false]. *)
 end
 
 

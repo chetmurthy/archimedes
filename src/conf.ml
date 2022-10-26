@@ -17,7 +17,7 @@
 
 (** Configuration values, possibly put by the 'configure' script. *)
 
-let destdir = "/usr/local/lib/ocaml/3.12.0"
+let destdir = "/home/ante/lib/ocaml"
 let plugins_dir = Filename.concat destdir "archimedes"
 
 let datadir = Filename.concat "/usr/local/share" "archimedes"
