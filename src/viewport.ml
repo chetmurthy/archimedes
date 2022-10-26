@@ -264,12 +264,6 @@ let get_path ?(notransform=false) vp p coord_name =
     Path.map p (data_norm_log vp.axes_system)
   else p
 
-(* Merges two non-sorted lists without duplicates. *)
-let merge l1 l2 =
-  let l2' = List.filter (fun x -> not (List.exists (( == ) x) l1)) l2 in
-  List.rev_append l1 l2'
-
-
 (* Primitives
  ***********************************************************************)
 
@@ -421,6 +415,14 @@ let rec do_instructions vp =
 let save vp = add_instruction vp (save_direct vp)
 let restore vp = add_instruction vp (restore_direct vp)
 
+let remove_last_instruction vp =
+  (* Avoid the specialisation in order to avoid a compiler warning on
+     partial evaluation (because [vp.instructions] is a [(unit ->
+     unit) Queue.t]). *)
+  let aux q = ignore (Queue.pop q) in
+  aux vp.instructions
+let clear_instructions vp = Queue.clear vp.instructions
+
 let show vp =
   do_instructions vp; (* => also for children *)
     Backend.show vp.backend
@@ -482,15 +484,16 @@ let upper_right_corner vp =
 let dimensions vp =
   Coordinate.to_device_distance vp.coord_device ~dx:1. ~dy:1.
 
-let set_clip vp =
-  vp.clip = true
+let set_clip_direct vp c () =
+  vp.clip <- c
 
-let set_noclip vp =
-  vp.clip = false
+let set_clip vp c =
+  set_clip_direct vp c ();
+  add_instruction vp (set_clip_direct vp c)
 
 let set_color vp c =
   vp.color <- c;  (* one may query the viewport! *)
-    add_instruction vp (set_color_direct vp c)
+  add_instruction vp (set_color_direct vp c)
 
 let set_global_line_cap vp lc =
   add_instruction vp (set_line_cap_direct vp lc)
