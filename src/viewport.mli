@@ -52,11 +52,7 @@ val make : t -> ?lines:float -> ?text:float -> ?marks:float ->
 
 val show : t -> unit
 (** [show vp] forces the viewport [vp] and all its children to
-    immediately display not yet processed instructions. *)
-
-val redraw : t -> unit
-(** [show vp] forces the viewport [vp] and all its children to
-    immediately redraw all their current content. *)
+    immediately display their current content. *)
 
 val get_backend : t -> Backend.t
 (** [get_backend vp] returns the backend associated to [vp], if vp is

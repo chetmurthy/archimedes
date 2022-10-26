@@ -1,7 +1,7 @@
 
 (** A 2D plotting library with various backends.
 
-    @version 0.4.11
+    @version 0.4.12
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke
@@ -977,11 +977,7 @@ sig
 
   val show : t -> unit
   (** [show vp] forces the viewport [vp] and all its children to
-      immediately display not yet processed instructions. *)
-
-  val redraw : t -> unit
-  (** [show vp] forces the viewport [vp] and all its children to
-      immediately redraw all their current content. *)
+      immediately display their current content. *)
 
   val get_backend : t -> Backend.t
   (** [get_backend vp] returns the backend associated to [vp], if vp is
@@ -1311,26 +1307,20 @@ sig
 
   type cost = Matrix.rectangle ->
     float -> float -> float -> float -> float -> float -> float
-  (** A cost [f bb x0 y0 xm ym x1 y1] which returns the cost
-      measuring how much the three points [(x0, y0)], [(xm, ym)], and
-      [(x1, y1)] differ from a straight line.  [bb] is a rough bounding
-      box of the set of points that can be used to determine whether two
-      points are close (in relative measure).  A cost [<= 0.] means one
-      is satisfied with drawing straight lines connecting the three
-      points. *)
+  (** A cost [f bb x0 y0 xm ym x1 y1] which returns the cost measuring
+      how much the three points [(x0, y0)], [(xm, ym)], and [(x1, y1)]
+      differ from a straight line.  [bb] is a rough bounding box of the
+      set of points that can be used to determine whether two points are
+      close (in relative measure).  A cost [<= 0.] means one is satisfied
+      with drawing straight lines connecting the three points. *)
 
-
-  val xy : ?tlog:bool -> ?fn0:float -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
+  val xy : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
     (float -> float * float) -> float -> float -> float array * float array
   (** [xy f t1 t2] samples the parametric function [f] on the
       interval going from [t1] to [t2].  Returns a list of the points in
       the sample.
 
       @param tlog do we need to step in a logarithmic way ?
-
-      @param fn0 fraction of [n] defining the number of steps for the
-      initial sampling of the function (that will later be
-      refined). Must be [0 < fn0 <= 1].
 
       @param min_step don't increment precision more than this threshold
 
@@ -1340,7 +1330,7 @@ sig
       @param cost a customized cost.
   *)
 
-  val x : ?tlog:bool -> ?fn0:float -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
+  val x : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
     (float -> float) -> float -> float -> float array * float array
   (** [x f x1 x2] same as {!Sampler.xy} but for the scalar function [f]
       on the interval going from [x1] to [x2]. *)
