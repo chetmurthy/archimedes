@@ -18,7 +18,7 @@
 (** Configuration values, possibly put by the 'configure' script. *)
 
 let destdirs () =
-  let destdir = [ "/usr/local/lib"; "/home/trch/.opam/4.03.0+flambda/lib" ] in
+  let destdir = [ "/usr/local/lib"; "/home/trch/.opam/4.06.1/lib" ] in
   try Sys.getenv "OCAMLPATH" :: destdir
   with Not_found -> destdir
 
