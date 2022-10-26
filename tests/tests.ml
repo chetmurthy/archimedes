@@ -30,6 +30,7 @@ let alltests = [ ("Arrows1", Arrows1.description, Arrows1.draw);
   ("Plot_sqrt", Plot_sqrt.description, Plot_sqrt.draw);
   ("Plot_stack", Plot_stack.description, Plot_stack.draw);
   ("Text", Text.description, Text.draw);
+  ("Text_data", Text_data.description, Text_data.draw);
   ("Text_labels", Text_labels.description, Text_labels.draw);
   ("Vector_field", Vector_field.description, Vector_field.draw);
   ("Viewport_autofit", Viewport_autofit.description, Viewport_autofit.draw);

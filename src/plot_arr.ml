@@ -30,19 +30,23 @@ let index_array n =
  ***********************************************************************)
 
 (* ASSUME n > 0. *)
-let lines_y vp ~fill ?base ~fillcolor (x: t) (y: t) n =
+let lines_y vp ~fill ?(const_base=false) ?base ~fillcolor
+    ?(const_x=false) (x: t) ?(const_y=false) (y: t) n =
   let path = Path.make() in
+  let x = if const_x then x else COPY(x)
+  and y = if const_y then y else COPY(y) in
   LINE_OF_ARRAY(path, x, y, FIRST, LAST(n));
   V.fit vp (Path.extents path);
   if fill then (
     let path_fill = Path.copy path in
     (match base with
     | None ->
-      Path.line_to path (float(LAST(n))) 0.;
-      Path.line_to path (float FIRST) 0.
+      Path.line_to path_fill (float(LAST(n))) 0.;
+      Path.line_to path_fill (float FIRST) 0.
     | Some b ->
+      let b = if const_base then b else COPY(b) in
       if DIM(b) <> n then invalid_arg(MOD ^ ".y: wrong length for \"base\"");
-      LINE_OF_ARRAY(path_fill, x, COPY(b), LAST(n), FIRST);
+      LINE_OF_ARRAY(path_fill, x, b, LAST(n), FIRST);
       V.fit vp (Path.extents path_fill); (* update for base *)
     );
     Path.close path_fill;
@@ -71,11 +75,10 @@ let bars vp ~fill ?base ~fillcolor (x:t) (y:t) n w =
       Path.rectangle path ~x:(GET(x,i) -. w *. 0.5) ~y:0. ~w ~h:(GET(y,i))
     done
   | Some b ->
-    if DIM(b) <> n then
-      invalid_arg "Archimedes.Plot.Array.y: wrong length for \"base\"";
+    if DIM(b) <> n then invalid_arg(MOD ^ ".y: wrong length for \"base\"");
     for i = FIRST to LAST(n) do
       Path.rectangle path
-        ~x:(GET(x,i) -. w *. 0.5) ~y:(GET(b,i)) ~w ~h:(GET(y,i))
+        ~x:(GET(x,i) -. w *. 0.5) ~y:(GET(b,i)) ~w ~h:(GET(y,i) -. GET(b,i))
     done);
   (* For bars, one certainly wants to see everything.  Moreover some
      space to the left and to the right is nice to have. *)
@@ -92,11 +95,10 @@ let horizontal_bars vp ~fill ?base ~fillcolor (x:t) (y:t) n w =
       Path.rectangle path ~x:0. ~y:(GET(y,i) -. w *. 0.5) ~w:(GET(x,i)) ~h:w
     done
   | Some b ->
-    if DIM(b) <> n then
-      invalid_arg "Archimedes.Plot.Array.y: wrong length for \"base\"";
+    if DIM(b) <> n then invalid_arg(MOD ^ ".y: wrong length for \"base\"");
     for i = FIRST to LAST(n) do
       Path.rectangle path
-        ~x:(GET(b,i)) ~y:(GET(y,i) -. w *. 0.5) ~w:(GET(x,i)) ~h:w
+        ~x:(GET(b,i)) ~y:(GET(y,i) -. w *. 0.5) ~w:(GET(x,i) -. GET(b,i)) ~h:w
     done);
   (* For horizontal bars, one certainly wants to see everything.
      Moreover some space to the top and bottom is nice to have. *)
@@ -114,17 +116,22 @@ let draw_marks vp style (x: t) (y: t) n =
     done
 
 (* ASSUME n > 0. *)
-let unsafe_y vp ?base ?(fill=false) ?(fillcolor=default_fillcolor)
-    ?(style=`Points "O") x y n =
+let unsafe_y vp ?const_base ?base ?(fill=false) ?(fillcolor=default_fillcolor)
+    ?(style=`Points "O") ?const_x x ?const_y y n =
   match style with
   | `Lines ->
-    let path = lines_y vp ~fill ?base ~fillcolor x y n in
+    let path =
+      lines_y vp ~fill ?const_base ?base ~fillcolor ?const_x x ?const_y y n
+    in
     V.stroke ~path vp `Data ~fit:false
   | `Points mark ->
-    ignore(lines_y vp ~fill ?base ~fillcolor x y n);
+    ignore(lines_y vp ~fill
+             ?const_base ?base ~fillcolor ?const_x x ?const_y y n);
     draw_marks vp style x y n
   | `Linespoints mark ->
-    let path = lines_y vp ~fill ?base ~fillcolor x y n in
+    let path =
+      lines_y vp ~fill ?const_base ?base ~fillcolor ?const_x x ?const_y y n
+    in
     V.stroke vp ~path `Data ~fit:false;
     draw_marks vp style x y n
   | `Bars w ->
@@ -134,12 +141,12 @@ let unsafe_y vp ?base ?(fill=false) ?(fillcolor=default_fillcolor)
   | `HBars w ->
     horizontal_bars vp ~fill ?base ~fillcolor x y n w
 
-let y vp ?base ?fill ?fillcolor ?style ?(const=false) ydata =
+let y vp ?const_base ?base ?fill ?fillcolor ?style ?const_y ydata =
   let n = DIM(ydata) in
   if n > 0 then (
-    let y = if const then ydata else COPY(ydata) in
     let x = index_array n in
-    unsafe_y vp ?base ?fill ?fillcolor ?style x y n
+    unsafe_y vp ?const_base ?base ?fill ?fillcolor ?style
+      ~const_x:true x ?const_y ydata n
   )
 
 (* FIXME: better selection of default colors *)
@@ -147,8 +154,8 @@ let default_fillcolors =
   [| default_fillcolor; Color.thistle; Color.misty_rose; Color.old_lace;
      Color.linen; Color.plum |]
 
-let stack vp ?colors ?(fill=true) ?(fillcolors=[| |])
-    ?(style=`Bars 0.5) yvecs =
+let stack vp ?(fill=true) ?(fillcolors=[| |])
+    ?(style=`Bars 0.5) ?(const=false) yvecs =
   if Array.length yvecs > 0 && DIM(yvecs.(0)) > 0 then (
     let fillcolors =
       if Array.length fillcolors = 0 then default_fillcolors
@@ -156,24 +163,29 @@ let stack vp ?colors ?(fill=true) ?(fillcolors=[| |])
     let nc = Array.length fillcolors in
     let n = DIM(yvecs.(0)) in
     let x = index_array n in
-    let y0 = COPY(yvecs.(0)) in
-    unsafe_y vp ~fill ~fillcolor:fillcolors.(0) ~style x y0 n;
-    let base = COPY(y0) in
-    for i = 1 to Array.length yvecs - 1 do
+    let y0 = if const then yvecs.(0) else COPY(yvecs.(0)) in
+    unsafe_y vp ~fill ~fillcolor:fillcolors.(0) ~style
+      ~const_x:true x ~const_y:true y0 n;
+    let base = ref y0 in
+    for i = 1 to pred (Array.length yvecs) do
       if DIM(yvecs.(i)) < n then
-        invalid_arg(sprintf "Archimedes.Array.stack: length yvec.(%i) < %i"
-                      i n);
-      let yi = COPY(yvecs.(i)) in
+        invalid_arg(sprintf "%s.stack: length yvec.(%i) < %i" MOD i n);
+      let yi = CREATE(n) in
+      let b = !base in
+      for j = FIRST to LAST(n) do SET(yi, j, GET(b,j) +. GET(yvecs.(i),j)) done;
       let fillcolor = fillcolors.(i mod nc) in
-      unsafe_y vp ~base:base ~fill ~fillcolor ~style x yi n;
-        (* [base] is saved in the path, it can be overwritten  *)
-      for i = FIRST to LAST(n) do SET(base, i, GET(base,i) +. GET(yi,i)) done
+      unsafe_y vp ~const_base:true ~base:b ~fill ~fillcolor ~style
+        ~const_x:true x ~const_y:true yi n;
+      base := yi
     done
   )
 
 (* ASSUME n > 0 *)
-let lines_xy vp ~fill ~fillcolor (x:t) (y:t) n =
+let lines_xy vp ~fill ~fillcolor
+    ?(const_x=false) (x:t) ?(const_y=false) (y:t) n =
   let path = Path.make() in
+  let x = if const_x then x else COPY(x)
+  and y = if const_y then y else COPY(y) in
   LINE_OF_ARRAY(path, x, y, FIRST, LAST(n));
   V.fit vp (Path.extents path);
   if fill then (
@@ -188,16 +200,16 @@ let lines_xy vp ~fill ~fillcolor (x:t) (y:t) n =
 
 (* ASSUME n > 0 *)
 let unsafe_xy vp ?(fill=false) ?(fillcolor=default_fillcolor)
-    ?(style=`Points "O") (x:t) (y:t) n =
+    ?(style=`Points "O") ?const_x (x:t) ?const_y (y:t) n =
   match style with
   | `Lines ->
-    let path = lines_xy vp ~fill ~fillcolor x y n in
+    let path = lines_xy vp ~fill ~fillcolor ?const_x x ?const_y y n in
     V.stroke ~path vp `Data ~fit:false
   | `Points mark ->
-    ignore(lines_xy vp ~fill ~fillcolor x y n);
+    ignore(lines_xy vp ~fill ~fillcolor ?const_x x ?const_y y n);
     draw_marks vp style x y n
   | `Linespoints mark ->
-    let path = lines_xy vp ~fill ~fillcolor x y n in
+    let path = lines_xy vp ~fill ~fillcolor ?const_x x ?const_y y n in
     V.stroke vp ~path `Data ~fit:false;
     draw_marks vp style x y n
   | `Bars w ->
@@ -207,13 +219,9 @@ let unsafe_xy vp ?(fill=false) ?(fillcolor=default_fillcolor)
   | `HBars w ->
     horizontal_bars vp ~fill ?base:None ~fillcolor x y n w
 
-let xy vp ?fill ?fillcolor ?style
-    ?(const_x=false) xdata ?(const_y=false) ydata =
+let xy vp ?fill ?fillcolor ?style ?const_x xdata ?const_y ydata =
   let n = DIM(xdata) in
   if n <> DIM(ydata) then
-    invalid_arg "Archimedes.Array.xy: arrays do not have the same length";
-  if n > 0 then (
-    let x = if const_x then xdata else COPY(xdata) in
-    let y = if const_y then ydata else COPY(ydata) in
-    unsafe_xy vp ?fill ?fillcolor ?style x y n
-  )
+    invalid_arg(MOD ^ ".xy: arrays do not have the same length");
+  if n > 0 then
+    unsafe_xy vp ?fill ?fillcolor ?style ?const_x xdata ?const_y ydata n

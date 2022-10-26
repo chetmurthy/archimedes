@@ -146,7 +146,7 @@ struct
     | P.Curve_to(_, _, x1, y1, x2, y2, x3, y3) ->
       Cairo.curve_to cr x1 y1 x2 y2 x3 y3
     | P.Close(_, _) -> Cairo.Path.close cr
-    | P. Array(x, y, i0, i1) ->
+    | P.Array(x, y, i0, i1) ->
       if i0 <= i1 then
         for i = i0 to i1 do Cairo.line_to cr x.(i) y.(i) done
       else
@@ -196,6 +196,8 @@ struct
       | A.Backend.Bold -> Cairo.Bold in
     Cairo.select_font_face t ~slant ~weight family
 
+  (* TODO: add an option for alignment to baseline (using font_extents)
+     instead of text extents. *)
   let show_text cr ~rotate ~x ~y pos text =
     (* Compute the angle between the desired direction and the X axis
        in the device coord. system. *)
@@ -228,17 +230,22 @@ struct
     Cairo.restore cr
 
   let text_extents t text =
+    Cairo.save t;
+    Cairo.set_matrix t id;
     let te = Cairo.text_extents t text in
+    Cairo.restore t;
     (*An extents is always expressed in current coordinates; however,
       show_text switches to device coordinates before "making the
       text". So we need to go to user coordinates.*)
     (*Note: The following transformations assume that the coordinates
       are orthogonal.*)
-    (*let x,y = Cairo.device_to_user_distance t te.x_bearing te.y_bearing in
+    let x,y = Cairo.device_to_user_distance t te.x_bearing te.y_bearing in
     let w,h = Cairo.device_to_user_distance t te.width te.height in
-    { M.x = x; y = -.y; w = w; h = -.h}*)
-    { M.x = te.x_bearing; y = te.y_bearing;
-      w = te.width; h = te.height}
+    (* FIXME: y text extents in Cairo are given with the bearing from
+       origin to *topmost* part of the glyphs. However, in normalized
+       coordinates (e.g: for Viewport), we want them to be expressed from
+       the downmost part. *)
+    { M.x = x; y = -. y; w = w; h = h }
 end
 
 let () =

@@ -36,9 +36,11 @@ sig
       {[
       x_new = xx *. x +. xy *. y +. x0;
       y_new = yx *. x +. yy *. y +. y0;      ]} *)
-  type t = { mutable xx: float; mutable yx: float;
-             mutable xy: float; mutable yy: float;
-             mutable x0: float; mutable y0: float; }
+  type affine = { mutable xx: float; mutable yx: float;
+                  mutable xy: float; mutable yy: float;
+                  mutable x0: float; mutable y0: float; }
+
+  type t = affine
 
   exception Not_invertible
 
@@ -141,8 +143,8 @@ sig
   type rectangle = {
     x:float;   (** X coordinate of the left side of the rectangle *)
     y:float;   (** Y coordinate of the the top side of the rectangle  *)
-    w:float;   (** width of the rectangle *)
-    h:float;   (** height of the rectangle  *)
+    w:float;   (** width of the rectangle  [>= 0]. *)
+    h:float;   (** height of the rectangle [>= 0]. *)
   }
 
   val transform_rectangle: ?dist_basepoint:bool -> t -> rectangle -> rectangle
@@ -155,6 +157,59 @@ sig
       - Specified as [true]: transform the base point as a distance.
       - Specified as [false]: no transformation of the base point.*)
 
+
+  (** Transformations that are the composition of translations and
+      inhomogeneous dilations (different scaling factors are allowed in
+      each canonical direction). *)
+  module Homothety :
+  sig
+    type t
+    (** See {!Matrix.t}, setting [xy = 0 = yx]. *)
+
+    val of_matrix : affine -> t
+    (** [of_matrix m] returns a copy of the transformation [m] if it
+        contains no rotation or raise [Invalid_argument] otherwise. *)
+
+    val to_matrix : t -> affine
+    (** [to_matrix m] returns a copy of the transformation [m]. *)
+
+    val make_identity : unit -> t
+    (** See {!Matrix.make_identity}. *)
+    val make_translate : x:float -> y:float -> t
+    (** See {!Matrix.make_translate}. *)
+    val make_scale : x:float -> y:float -> t
+    (** See {!Matrix.make_scale}. *)
+    val set_to_identity : t -> unit
+    (** See {!Matrix.set_to_identity}. *)
+    val copy: t -> t
+    (** See {!Matrix.copy}. *)
+    val blit : t -> t -> unit
+    (** See {!Matrix.blit}. *)
+    val translate : t -> x:float -> y:float -> unit
+    (** See {!Matrix.translate}. *)
+    val scale : t -> x:float -> y:float -> unit
+    (** See {!Matrix.scale}. *)
+    val invert : t -> unit
+    (** See {!Matrix.invert}. *)
+    val det : t -> float
+    (** See {!Matrix.det}. *)
+
+    val mul : t -> t -> t
+    (** See {!Matrix.mul}. *)
+    val mul_in : t -> t -> t -> unit
+    (** See {!Matrix.mul_in}. *)
+    val transform_point : t -> x:float -> y:float -> float * float
+    (** See {!Matrix.transform_point}. *)
+    val transform_distance : t -> dx:float -> dy:float -> float * float
+    (** See {!Matrix.transform_distance}. *)
+    val inv_transform_point : t -> x:float -> y:float -> float * float
+    (** See {!Matrix.inv_transform_point}. *)
+    val inv_transform_distance : t -> dx:float -> dy:float -> float * float
+    (** See {!Matrix.inv_transform_distance}. *)
+
+    val transform_rectangle: ?dist_basepoint:bool -> t -> rectangle -> rectangle
+    (** See {!Matrix.transform_rectangle}. *)
+  end
 
 
 end
@@ -205,7 +260,7 @@ sig
   (** Equivalent to ([r t],[g t],[b t], [a t]).*)
 
   val luminance : t -> float
-  (** @returns the luminance of the color.  See
+  (** @return the luminance of the color.  See
       e.g. {{:http://en.wikipedia.org/wiki/Luminance_%28relative%29}Wikipedia}.
   *)
 
@@ -591,10 +646,10 @@ sig
     val fill_with_color : t -> Color.t -> unit
     (** [fill_with_color t c] fill the current path of [t] with the
         color [c].  Even if the color is transparent, it must {b
-        replace} all underlying elements (contrarily to {!Backend.fill}
+        replace} all underlying elements (contrarily to {!Backend.T.fill}
         which will show the underlying elements through a transparent
         color).  If transparency is not supported by the backend, it
-        does the same as {!Backend.fill}, except that this operation
+        does the same as {!Backend.T.fill}, except that this operation
         does not change the current color of the backend.  It may modify
         the current path however. *)
 
@@ -704,6 +759,8 @@ sig
   val width : t -> float
     (** Returns the height of the backend canvas. *)
 
+  val name : t -> string
+  (** Returns the name under which the backend was registered. *)
 
   val registered: unit -> string list
     (** Return the list of registered (i.e. loaded) backends. *)
@@ -748,11 +805,12 @@ end
 (** {2 Managing viewports} *)
 
 
-(** Affine systems of coordinates relative to other coordinate systems
-    with automatic updates.  The automatic update refers to the fact
-    that, if a coordinate system is upated, all coordinate systems
-    which depend on it (possibly through several intermediate
-    coordinate systems), they will use the updated version. *)
+(** Systems of coordinates (inhomogeneous homotheties) relative to
+    other coordinate systems with automatic updates.  The automatic
+    update refers to the fact that, if a coordinate system is upated,
+    all coordinate systems which depend on it (possibly through
+    several intermediate coordinate systems), they will use the
+    updated version. *)
 module Coordinate :
 sig
 
@@ -804,7 +862,7 @@ sig
 
   (** {2 Creating new coordinate systems} *)
 
-  val make_root : Matrix.t -> t
+  val make_root : Matrix.Homothety.t -> t
   (** [make_root m] make a system of coordinates which, when used,
       amounts to use [m].  This coordinate system depends on no
       other  so will never be updated.  It can be modified however
@@ -826,18 +884,12 @@ sig
       and [y] respectively.  If [coord] is modified, the new system
       will be updated as well. *)
 
-  val make_rotate : t -> angle:float -> t
-  (** [make_rotate coord a] defines a new coordinate system that
-      consists in rotating the axis X and Y of [coord] by [a] radians
-      (assuming the axis of the system [coord] are orthonormal).  If
-      [coord] is modified, the new system will be updated as well.  *)
-
-  val make_from_transform : t -> Matrix.t -> t
+  val make_from_transform : t -> Matrix.Homothety.t -> t
   (** [make_from_transform coord tm] defines a new coordinate system
-      that consists first in applying [tm] and then the tranformation
-      in [coord].  In other words, [tm] is the affine transformation
-      from the desired coordinate system to [coord].  If [coord] is
-      modified, the new system will be updated as well. *)
+      that consists first in applying [tm] and then the tranformation in
+      [coord].  In other words, [tm] is the transformation from the
+      desired coordinate system to [coord].  If [coord] is modified, the
+      new system will be updated as well. *)
 
   val copy : t -> t
   (** Returns a completely independent copy of the current coordinate
@@ -855,11 +907,6 @@ sig
   (** [scale coord x y] modifies the coordinate system [coord]
       dilating its axis X and Y by a factor of [x] and [y]
       respectively. *)
-
-  val rotate : t -> angle:float -> unit
-  (** [rotate coord a] modifies the coordinate system [coord] rotating
-      its axis X and Y by [a] radians (assuming the axis of the system
-      [coord] are orthonormal). *)
 
   val transform : t -> Matrix.t -> unit
   (** [transform coord tm] modifies the coordinate system [coord]
@@ -1167,11 +1214,14 @@ sig
       point tm between t1 and t2 which will be used to decide if we
       need to increment precision or not. *)
 
-  type cost = float -> float -> float -> float -> float -> float -> float
-  (** A cost [f x0 y0 xm ym x1 y1] which returns the cost measuring how
-      much the three points [(x0, y0)], [(xm, ym)], and [(x1, y1)]
-      differ from a straight line.  A cost of [0.] means one is
-      satisfied with it. *)
+  type cost = Matrix.rectangle ->
+    float -> float -> float -> float -> float -> float -> float
+  (** A cost [f bb x0 y0 xm ym x1 y1] which returns the cost measuring
+      how much the three points [(x0, y0)], [(xm, ym)], and [(x1, y1)]
+      differ from a straight line.  [bb] is a rough bounding box of the
+      set of points that can be used to determine whether two points are
+      close (in relative measure).  A cost [<= 0.] means one is satisfied
+      with drawing straight lines connecting the three points. *)
 
   val xy : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
     (float -> float * float) -> float -> float -> float array * float array
@@ -1183,7 +1233,7 @@ sig
       @param min_step don't increment precision more than this threshold
 
       @param n is a maximum number of evaluation of [f] we allow.
-               Default: [100].
+      Default: [100].
       @param strategy a customized strategy.
       @param cost a customized cost.
   *)
@@ -1236,7 +1286,22 @@ sig
       (that is, the previous binding disappears).*)
 
   val names : unit -> name list
-  (** @return a list of all names declared. *)
+  (** @return a list of all names currently declared.
+
+      By default, the following marks are defined (a short explanation
+      is given if the mark is not clear from the string):
+      - ["x"], ["-"], ["|"], ["+"], ["*"],
+      - ["o"] (a circle), ["O"] (a disk, i.e. same as ["o"] but filled),
+      - ["s"] (a square), ["S"] (a filled square),
+      - ["d"] (a diamond), ["D"] (a filled diamond),
+      - ["^"] (an inverted V),  ["v"], [">"], ["<"],
+      - ["^-"] (a triangle pointing upward), ["v-"], ["|>"], ["<|"],
+      - ["^--"] (a filled triangle pointing upward), ["v--"], ["||>"], ["<||"],
+      - ["p"] (a pentagon), ["P"] (a filled pentagon),
+      - ["h"] (an hexagon), ["H"] (a filled hexagon),
+      - ["tic_up"] (a small bar above the current location),
+        ["tic_down"], ["tic_left"], ["tic_right"].
+  *)
 
 end
 
@@ -1476,6 +1541,10 @@ val yrange : Viewport.t -> float -> float -> unit
     which must be given in [Data] coordinates (from 0 to 1).
     - [`HBars h] Data points determine the width of an horizontal box
     of height [h] which must be given in [Data] coordinates (from 0 to 1).
+
+    For the list of default marks for [`Points] and [`Linespoints]
+    have a look to {!Pointstyle.names}.  You can also define your own
+    with {!Pointstyle.add}.
 *)
 type style =
 [ `Lines
@@ -1518,18 +1587,19 @@ val xyf : Viewport.t -> ?tlog:bool -> ?n:int ->
 
 (** Plotting float Arrays. *)
 module Array : sig
-  val y : Viewport.t -> ?base:float array -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:style ->
-    ?const:bool -> float array -> unit
-  (** [y vp yvec] draws the set of points (i, yvec.(i)).
+  val y : Viewport.t -> ?const_base:bool -> ?base:float array ->
+    ?fill:bool -> ?fillcolor:Color.t -> ?style:style ->
+    ?const_y:bool -> float array -> unit
+  (** [y vp yvec] draws the set of points [(i, yvec.(i))].
 
       @param style the style used for the plot.  The default style is
       [`Points "O"] which means data points are marked by a small disk.
+      See {!Archimedes.style} for a full list.
 
       @param fill whether to fill the surface between the base and the
       values [yval].
       @param fillcolor the filling color (default: {!Color.white_smoke}).
-      @param const whether the input vector [yvec] will not be modified
+      @param const_y whether the input vector [yvec] will not be modified
       anymore (so there is no need to cache its current values).
 
       @param base for the styles [`Lines], [`Points], and
@@ -1537,30 +1607,54 @@ module Array : sig
       the styles [`Impulses] and [`Bars w], it is the Y value above
       which the boxes (of heights given by [yvec]) are drawn.  For the
       style [`HBars], it is the (signed) distance to the Y axis at
-      which the horizontal bar starts. *)
+      which the horizontal bar starts.
+      @param const_base same as [const_y] for the base. *)
 
   val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t -> ?style:style ->
     ?const_x:bool -> float array -> ?const_y:bool -> float array -> unit
-  (** [xy cp xvec yvec] draws the set of points (i, yvec.(i)).
+  (** [xy cp xvec yvec] draws the set of points [(xvec.(i), yvec.(i))].
       The optional arguments are similar to {!Array.y}.
 
       @raise Invalid_argument if [xvec] and [yvec] do not have the same
-      length.*)
+      length.
+
+      See {!Array.y} for the meaning of optional arguments. *)
 
   val xy_pairs: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
     ?style:[`Lines | `Points of string | `Linespoints of string ] ->
     (float * float) array -> unit
-  (** See {!Array.xy_pairs}. *)
+  (** See {!Array.xy}.  The only difference is that this function
+      takes an array of couples (x,y) instead of two arrays, one for x
+      and a second of y. *)
 
-  val stack : Viewport.t -> ?colors:Color.t array ->
+  val stack : Viewport.t ->
     ?fill:bool -> ?fillcolors:Color.t array -> ?style:style ->
-    float array array -> unit
+    ?const:bool -> float array array -> unit
+  (** [stack yvecs] plot the data in a stacked fashion, the Y values
+      contained in [yvecs.(i)] are represented as the deviation above
+      [yvecs.(i-1)].  This makes sense only if the data is non-negative.
+
+      @param style how to represent each data point.  Default [`Bars 0.5].
+
+      @param colors the colors for the data lines.
+
+      @param fill whether to fill the boxes or area under the data
+      points.  Default: [true].
+
+      @param fillcolors the [i]th color is used to fill the area under
+      the data points [yvecs.(i)].  If the array is empty, a default
+      palette is used.  If there are less colors than vectors in
+      [yvecs], they are used in a circular way.
+
+      @param const_y whether the input vector [yvec] will not be modified
+      anymore (so there is no need to cache its current values). *)
+  ;;
 end
 
 (** Plotting Lists of floats. *)
 module List : sig
-  val y : Viewport.t -> ?base:float list -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:style -> float list -> unit
+  val y : Viewport.t -> ?base:float list -> ?fill:bool ->
+    ?fillcolor:Color.t -> ?style:style -> float list -> unit
   (** See {!Array.y}.  *)
 
   val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
@@ -1580,18 +1674,18 @@ module Vec : sig
   open Bigarray
   type t = (float, float64_elt, fortran_layout) Array1.t
 
-  val y : Viewport.t -> ?base:t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:style ->
-    ?const:bool -> t -> unit
+  val y : Viewport.t -> ?const_base:bool -> ?base:t -> ?fill:bool ->
+    ?fillcolor:Color.t -> ?style:style ->
+    ?const_y:bool -> t -> unit
   (** See {!Array.y}.  *)
 
   val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t -> ?style:style ->
     ?const_x:bool -> t -> ?const_y:bool -> t -> unit
   (** See {!Array.xy}.  *)
 
-  val stack : Viewport.t -> ?colors:Color.t array ->
+  val stack : Viewport.t ->
     ?fill:bool -> ?fillcolors:Color.t array -> ?style:style ->
-    t array -> unit
+    ?const:bool -> t array -> unit
   (** See {!Array.stack}.  *)
 end
 
@@ -1600,18 +1694,18 @@ module CVec : sig
   open Bigarray
   type t = (float, float64_elt, c_layout) Array1.t
 
-  val y : Viewport.t -> ?base:t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:style ->
-    ?const:bool -> t -> unit
+  val y : Viewport.t -> ?const_base:bool -> ?base:t -> ?fill:bool ->
+    ?fillcolor:Color.t -> ?style:style ->
+    ?const_y:bool -> t -> unit
   (** See {!Array.y}.  *)
 
   val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t -> ?style:style ->
     ?const_x:bool -> t -> ?const_y:bool -> t -> unit
   (** See {!Array.xy}.  *)
 
-  val stack : Viewport.t -> ?colors:Color.t array ->
+  val stack : Viewport.t ->
     ?fill:bool -> ?fillcolors:Color.t array -> ?style:style ->
-    t array -> unit
+    ?const:bool -> t array -> unit
   (** See {!Array.stack}.  *)
 end
 

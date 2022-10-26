@@ -35,3 +35,14 @@ configuration file. The generated setup only depends on the standard OCaml
 installation: no additional library is required.
 
 (* OASIS_STOP *)
+
+Links
+=====
+
+The above mentioned packages possibly are present in the package
+system (if any exists) of your OS or can be downloaded through OASIS.
+You can also find them at the following locations:
+
+findlib: http://projects.camlcity.org/projects/findlib.html
+cairo2:  https://forge.ocamlcore.org/projects/cairo/
+         (this in turn requires the C libray cairo http://cairographics.org/)
