@@ -71,12 +71,13 @@ let simple ?(style=Relief) ?(colorscheme=Default) ?(keyplacement=Rectangle)
   let total = List.fold_left (fun acc (_, x) -> acc +. x) 0. sorted in
   let strokepath = Path.make () in
   let draw_simple_data (position, angle) (label, value) =
-    let path = Path.make_at centerx centery in
+    let path = Path.make() in
+    Path.move_to path centerx centery;
     let endangle = angle +. value /. total *. 2. *. pi in
     Path.line_to path
       (centerx +. radius *. cos angle) (centery +. radius *. sin angle);
     Path.arc path radius angle endangle;
-    Path.add strokepath path;
+    Path.append strokepath path;
     Viewport.set_color vp defaultcolors.(position);
     Viewport.fill ~path vp V.Graph;
     (position + 1, endangle)

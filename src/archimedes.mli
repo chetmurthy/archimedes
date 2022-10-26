@@ -1,3 +1,4 @@
+
 (** A 2D plotting library with various backends.
 
     @version 0.3.2
@@ -19,100 +20,6 @@
     ]}
 
 *)
-
-(** Abstract representation of colors (suitable for RGBA). *)
-module Color :
-sig
-
-  type t
-  (** The type for colors*)
-
-  val rgb : float -> float -> float -> t
-  (** [rgb r g b] creates the color with transparency [~a], red
-      component [r], green component [g] and blue component [b]. All
-      values must be between [0.] and [1.]; raises [Invalid_argument]
-      otherwise. *)
-
-  val rgba : float -> float -> float -> float -> t
-  (** [rgba r g b a] creates the color with transparency [~a], red
-      component [r], green component [g] and blue component [b]. All values
-      must be between [0.] and [1.]; raises [Invalid_argument] otherwise.*)
-
-  val r : t -> float
-  (** Returns the red component of a color.*)
-
-  val g : t -> float
-  (** Returns the green component of a color.*)
-
-  val b : t -> float
-  (** Returns the blue component of a color.*)
-
-  val a : t -> float
-  (** Returns the transparency (alpha) component of a color.*)
-
-  val get_rgb : t -> float * float * float
-  (** Equivalent to ([r t],[g t],[b t]).*)
-
-  val get_rgba : t -> float * float * float * float
-  (** Equivalent to ([r t],[g t],[b t], [a t]).*)
-
-  val black : t
-  val red : t
-  val green : t
-  val blue : t
-  val yellow : t
-  val magenta : t
-  val cyan : t
-  val white : t
-  (** Predefined colors.*)
-
-  (** {2 Merging colors} *)
-
-  (** Different ways of merging colors.  See
-      http://cairographics.org/operators/ for more explanations.*)
-  type operator =
-  | Over (** Transparency and color components are mixed in such a way
-             that it corresponds to putting the second color over the first*)
-  | Source (** First color completely ignored. *)
-  | Clear (** Inhibits all colors *)
-  | In (** RGB components as the second color, A component product of
-           the two A components. So, a transparent color result if the
-           first one was transparent.*)
-  | Out (** RGB components as the second color, A component product of
-            the second A component with (1 - A) first component. So, a
-            transparent color result if the first one was opaque.*)
-  | Atop (** Transparency of the first color is the final transparency;
-             mixes RGB components.*)
-  | Dest (** Second color completely ignored. (<-> SOURCE)*)
-  | Dest_Over (** Transparency and color components are mixed in such a
-                  way that it corresponds to putting the first color over the
-                  second. (<-> OVER)*)
-  | Dest_In (** RGB components as the first color, A component product of
-                the two A components. So, a transparent color result if the
-                second one was transparent. (<-> IN)*)
-  | Dest_Out (** RGB components as the first color, A component product
-                 of the first A component with (1 - A) second
-                 component. So, a transparent color result if the
-                 second one was opaque. (<-> OUT)*)
-  | Dest_Atop (** Transparency of the second color is the final transparency;
-                  mixes RGB components. (<-> ATOP)*)
-  | Xor (** Same mix of color than OVER, but transparency will be more
-            important.*)
-  | Add (** RGB components: ponderated sum of RGB components, with
-            transparency. Resulting A is the sum of transparencies
-            (bounded to 1. if necessary).*)
-  | Saturate (** Same as ADD, but the sum for RGB components shrinks
-                 the ponderation the first color components (coeff:
-                 min (first A, 1 - second A)) *)
-
-
-  val add : ?op:operator -> t -> t -> t
-  (** Adds the first color to the second color, according to the
-      operator [op] (default : [Over]).*)
-
-
-
-end
 (*----------------------------------------------------------------------*)
 (** {2 Affine transformations} *)
 
@@ -252,7 +159,277 @@ sig
 
 end
 (*----------------------------------------------------------------------*)
-(** {2 Registering backends and extending the library} *)
+(** {2 Base elements of a plot} *)
+
+
+(** Abstract representation of colors (suitable for RGBA). *)
+module Color :
+sig
+
+  type t
+  (** Represent a color (immutable). *)
+
+  val rgb : float -> float -> float -> t
+  (** [rgb r g b] creates the color with transparency [~a], red
+      component [r], green component [g] and blue component [b]. All
+      values must be between [0.] and [1.]; raises [Invalid_argument]
+      otherwise. *)
+
+  val rgba : float -> float -> float -> float -> t
+  (** [rgba r g b a] creates the color with transparency [~a], red
+      component [r], green component [g] and blue component [b]. All values
+      must be between [0.] and [1.]; raises [Invalid_argument] otherwise.*)
+
+  val hex : int -> t
+  (** [hex c] returns a color from its specification in "hexadecimal
+      form", that is as [0xRRGGBB] where [R], [G] and [B] are
+      hexadecimal digits giving the red, green, and blue components.  It
+      is the form used by [Graphics]. *)
+
+  val r : t -> float
+  (** Returns the red component of a color.*)
+
+  val g : t -> float
+  (** Returns the green component of a color.*)
+
+  val b : t -> float
+  (** Returns the blue component of a color.*)
+
+  val a : t -> float
+  (** Returns the transparency (alpha) component of a color.*)
+
+  val get_rgb : t -> float * float * float
+  (** Equivalent to ([r t],[g t],[b t]).*)
+
+  val get_rgba : t -> float * float * float * float
+  (** Equivalent to ([r t],[g t],[b t], [a t]).*)
+
+  (** {3 Predefined colors} *)
+
+  val black : t
+  val red : t
+  val green : t
+  val blue : t
+  val yellow : t
+  val magenta : t
+  val cyan : t
+  val white : t
+  val dark_slate_grey : t
+
+  (** {4 Shades of Blue} *)
+
+  val deep_sky_blue : t
+  val dodger_blue : t
+  val aquamarine : t
+  val light_blue : t
+  val medium_blue : t
+  val navy_blue : t
+  val royal_blue : t
+
+  (** {4 Shades of Brown} *)
+
+  val burlywood : t
+  val chocolate : t
+  val tan : t
+
+  (** {4 Shades of Green} *)
+
+  val dark_green : t
+  val dark_olive_green : t
+  val forest_green : t
+  val green_yellow : t
+  val sea_green : t
+
+  (** {4 Shades of Orange} *)
+
+  val dark_orange : t
+  val peach_puff : t
+  val coral : t
+  val orange : t
+
+  (** {4 Shades of Red} *)
+
+  val hot_pink : t
+  val indian_red : t
+  val light_pink : t
+  val misty_rose : t
+  val orange_red : t
+  val firebrick : t
+
+  (** {4 Shades of Violet} *)
+
+  val dark_orchid : t
+  val lavender_blush : t
+  val plum : t
+  val orchid : t
+  val purple : t
+  val thistle : t
+
+  (** {4 Shades of White} *)
+
+  val antique_white : t
+  val old_lace : t
+  val ivory : t
+  val linen : t
+  val wheat : t
+
+  (** {4 Shades of Yellow} *)
+
+  val lemon_chiffon : t
+  val light_goldenrod : t
+  val cornsilk : t
+  val gold : t
+
+
+  (** {3 Merging colors} *)
+
+  (** Different ways of merging colors.  See
+      http://cairographics.org/operators/ for more explanations.*)
+  type operator =
+  | Over (** Transparency and color components are mixed in such a way
+             that it corresponds to putting the second color over the first*)
+  | Source (** First color completely ignored. *)
+  | Clear (** Inhibits all colors *)
+  | In (** RGB components as the second color, A component product of
+           the two A components. So, a transparent color result if the
+           first one was transparent.*)
+  | Out (** RGB components as the second color, A component product of
+            the second A component with (1 - A) first component. So, a
+            transparent color result if the first one was opaque.*)
+  | Atop (** Transparency of the first color is the final transparency;
+             mixes RGB components.*)
+  | Dest (** Second color completely ignored. (<-> SOURCE)*)
+  | Dest_Over (** Transparency and color components are mixed in such a
+                  way that it corresponds to putting the first color over the
+                  second. (<-> OVER)*)
+  | Dest_In (** RGB components as the first color, A component product of
+                the two A components. So, a transparent color result if the
+                second one was transparent. (<-> IN)*)
+  | Dest_Out (** RGB components as the first color, A component product
+                 of the first A component with (1 - A) second
+                 component. So, a transparent color result if the
+                 second one was opaque. (<-> OUT)*)
+  | Dest_Atop (** Transparency of the second color is the final transparency;
+                  mixes RGB components. (<-> ATOP)*)
+  | Xor (** Same mix of color than OVER, but transparency will be more
+            important.*)
+  | Add (** RGB components: ponderated sum of RGB components, with
+            transparency. Resulting A is the sum of transparencies
+            (bounded to 1. if necessary).*)
+  | Saturate (** Same as ADD, but the sum for RGB components shrinks
+                 the ponderation the first color components (coeff:
+                 min (first A, 1 - second A)) *)
+
+
+  val add : ?op:operator -> t -> t -> t
+  (** Adds the first color to the second color, according to the
+      operator [op] (default : [Over]).*)
+
+
+
+end
+
+
+
+(** Creating abstract paths. *)
+module Path :
+sig
+  type t = Archimedes_internals.Path.t
+  (** Abstract mutable path. *)
+
+  val make: unit -> t
+  (** [make ()] creates a new empty path. *)
+
+  val is_empty : t -> bool
+  (** Tells whether the path is empty. *)
+
+  val current_point : t -> float * float
+  (** Returns the point where the path currently ends. *)
+
+  val copy: t -> t
+  (** [copy p] copies a path *)
+
+  val clear: t -> unit
+  (** [clear p] clears the path (removes all operations). *)
+
+  val extents: t -> Matrix.rectangle
+  (** [extents p] returns the path's extents. *)
+
+  val move_to: t -> x:float -> y:float -> unit
+  (** [move_to p x y] moves the path's current point to ([x], [y]) *)
+
+  val line_to: t -> x:float -> y:float -> unit
+  (** [line_to p x y] draws a line from the path's current point to ([x],
+      [y]) and sets the current point to ([x], [y]) *)
+
+  val line_of_array: t ->
+    ?const_x:bool -> float array -> ?const_y:bool -> float array -> unit
+  (** [line_of_array p x y] continue the current line (or start a new
+      one) with the line formed by joining the points [x.(i), y.(i)],
+      [i=0, 1,...].
+
+      @param const_x by setting it to [true], you indicate that you will
+      not modify [x] (so it will not be copied).  Default: false.
+      @param const_y Same as [const_x] but for [y].
+      @raise Failure if [x] and [y] do not have the same length. *)
+
+  type vec =
+    (float, Bigarray.float64_elt, Bigarray.fortran_layout) Bigarray.Array1.t
+
+  val line_of_fortran: t ->
+    ?const_x:bool -> vec -> ?const_y:bool -> vec -> unit
+  (** Same as {!line_of_array} but for FORTRAN bigarrays. *)
+
+
+  val rel_move_to: t -> x:float -> y:float -> unit
+  (** [rel_move_to p x y] shifts the path's current point of [x]
+      horizontally and [y] vertically.
+
+      @param rot to consider a rotation of [rot] radians (default: [0.]). *)
+
+  val rel_line_to: t -> x:float -> y:float -> unit
+  (** [rel_line_to p x y] shifts the path's current point of [x]
+      horizontally and [y] vertically and draws a line between the
+      current and the new point.
+
+      @param rot (default: 0.) to consider a rotation of [rot] radians *)
+
+  val rectangle: t -> x:float -> y:float -> w:float -> h:float -> unit
+  (** [rectangle p x y w h] draws a rectangle specified by ([x], [y], [w],
+      [h]). *)
+
+  val curve_to: t -> x1:float -> y1:float -> x2:float -> y2:float ->
+    x3:float -> y3:float -> unit
+  (** [curve_to p x1 y1 x2 y2 x3 y3] draws a cubic Bezier curve using the
+      path's current point as first point (x0, y0) if it is set, else
+      ([x1, y1]).  Sets the path's current point to ([x3], [y3]) *)
+
+  val arc: t -> r:float -> a1:float -> a2:float -> unit
+  (** [arc p r a1 a2] draws an arc starting at the path's current
+      point. The starting angle is [a1], the radius [r] and the arc is
+      drawn clockwise to the angle [a2]. The angles are given in
+      radians.  *)
+
+  val close: t -> unit
+  (** [close p] Closes the path. It is usually not required to close a
+      path, this is useful only to ensure the path won't be extended. *)
+
+  val current_point: t -> float * float
+  (** [current_point p] returns the current point of the path.
+      @raise Failure if no current point exists. *)
+
+  val append: t -> t -> unit
+  (** [append p1 p2] append the path [p2] to the end of [p1] and {i
+      clear} [p2].  The current point of [p1] becomes the one of
+      [p2]. *)
+
+  val transform : Matrix.t -> t -> t
+  (** [transform m p] returns a new path resulting from applying the
+      affine transformation [m] to [p]. *)
+
+end
+(*----------------------------------------------------------------------*)
+(** {2 Registering backends} *)
 
 
 (** Module providing a uniform interface and managing the dynamic
@@ -317,7 +494,16 @@ sig
     val get_line_join: t -> line_join
 
     val move_to : t -> x:float -> y:float -> unit
+    (** Begin a new sub-path.  After this call the current point will be
+        [(x, y)]. *)
     val line_to : t -> x:float -> y:float -> unit
+    (** [line_to bk x y] Adds a line to the path from the current point
+        to position [(x, y)] in the current backend coordinates.  After
+        this call the current point will be [(x, y)].
+
+        If there is no current point before the call to [line_to] this
+        function will behave as {!move_to}[ bk x y]. *)
+
     val rel_move_to : t -> x:float -> y:float -> unit
     val rel_line_to : t -> x:float -> y:float -> unit
 
@@ -355,9 +541,34 @@ sig
     val fill : t -> unit
     val fill_preserve : t -> unit
 
+    val stroke_path_preserve : t -> Path.t -> unit
+    (** [stroke_path bk p] stroke the abstract path [p], where its
+        coordinates are interpreted in the current transformation
+        matrix.  Of course, the current clipping will be obeyed.  After
+        this operation, the current path in [bk] is the transformation
+        of [p].
+
+        The internal representation of the path is available in
+        [Archimedes_internals.Path]. *)
+    val fill_path_preserve : t -> Path.t -> unit
+    (** [fill_path_preserve] is similar to [stroke_path_preserve] except
+        that it fills the path. *)
+
+    val show : t -> unit
+    (** Some backends may not show immediately the action of {!stroke},
+        {!fill}, {!stroke_path_preserve},... immediately (usually
+        because it is expensive but also to avoid flicker during
+        animations).  [show bk] forces the backend to update.  *)
+
     val clip_rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
     (** Establishes a new clip rectangle by intersecting the current
-        clip rectangle.  This {i may clear} the current path. *)
+        clip rectangle.  This {i may clear} the current path.  Calling
+        {clip_rectangle} can only make the clip region smaller, never
+        larger.  For [clip_rectangle] to have only a local effect, put
+        it in a {!save} / {!restore} group.
+
+        [clip_rectangle] is garantee to respect the CTM only if the
+        components [xy] and [yx] of the matrix are both [0.]. *)
 
     val save : t -> unit
     (** Save the current state of the backend.  Note that
@@ -427,18 +638,21 @@ sig
 
   include T
 
-  val make : ?dirs:string list -> string -> float -> float -> t
-    (** [make backend width height] creates a new backend of the given
-        dimensions.  The units of the dimensions are backend dependent.
+  val make : ?dirs:string list -> string list -> float -> float -> t
+  (** [make backend width height] creates a new backend of the
+      given dimensions.  The units of the dimensions are backend
+      dependent.
 
-        [backend] is the name of the underlying engine, followed by one
-        or several options separated by spaces.  For example, "Graphics"
-        for the graphics backend or "Cairo PNG filename" for the Cairo
-        backend, using a PNG surface to be saved to [filename]. *)
+      The first element of [backend] is the name (case insensitive) of
+      the underlying engine.  It may be followed by one or several
+      options.  For example, ["Graphics"] for the graphics backend or
+      ["Cairo"; "PNG"; filename] for the Cairo backend, using a PNG
+      surface to be saved to [filename].  The empty list selects the
+      graphics backend. *)
 
   val close : t -> unit
-    (** Close the handle.  For some backends, the output will not be
-        complete until this function is called. *)
+  (** Close the handle.  For some backends, the output will not be
+      complete until this function is called. *)
 
   val height : t -> float
     (** Returns the width of the backend canvas. *)
@@ -451,7 +665,7 @@ sig
     (** Return the list of registered (i.e. loaded) backends. *)
 
   val available : dirs:string list -> string list
-      (** Return the list of available backends in the given directories. *)
+  (** Return the list of available backends in the given directories. *)
 
 
   (************************************************************************)
@@ -476,15 +690,15 @@ sig
         some final work need to be done for some of them. *)
   end
 
-    module Register(B: Capabilities) : sig end
-      (** The {i side effect} of this functor application is to register
-          the functions of the backend [B] under the name [B.name].
+  module Register(B: Capabilities) : sig end
+  (** The {i side effect} of this functor application is to register
+      the functions of the backend [B] under the name [B.name].
 
-          A backend [B] must be declared in a file archimedes_[B.name]
-          (compiled to a .cmo and/or .cmxs library) and the functor
-          application must be executed as part of the initialisation code.
-          We recommend the use of [let module U = Register(B) in ()] to
-          perform the registration.  *)
+      A backend [B] must be declared in a file archimedes_[B.name]
+      (compiled to a .cmo and/or .cmxs library) and the functor
+      application must be executed as part of the initialisation code.
+      We recommend the use of [let module U = Register(B) in ()] to
+      perform the registration.  *)
 
 end
 
@@ -626,156 +840,6 @@ sig
 
 end
 
-(** Module handling point styles and marks. *)
-module Pointstyle :
-sig
-
-  exception Error of string
-    (**Raised for undefined point styles.*)
-
-  type name = string
-  (** Point styles are identified by strings. *)
-
-  val add : name:name -> (Backend.t -> unit) -> Matrix.rectangle -> unit
-  (** [add name f extents] adds to the existing point styles, a new
-      point style, referenced under the name [name]. This point style
-      is made using the function [f]; the extents it takes is given by
-      [extents]. The behaviour of adding a new point style whose name
-      is already used by another is the same as the core [Map.S.add]
-      (that is, the previous binding disappears).*)
-
-  val names : unit -> name list
-  (** @return a list of all names declared. *)
-
-end
-
-
-
-(** Creating abstract paths. *)
-module Path :
-sig
-
-  type t
-
-  val make: unit -> t
-  (** [make ()] creates a new empty path *)
-
-  val copy: t -> t
-  (** [copy p] copies a path *)
-
-  val make_at: float -> float -> t
-  (** [make x y] creates a new empty path and moves it to ([x], [y]) *)
-
-  val clear: t -> unit
-  (** [clear p] clears the path (removes all operations) *)
-
-  val extents: t -> Matrix.rectangle
-  (** [extents p] returns a copy of the path's extents *)
-
-  val move_to: t -> x:float -> y:float -> unit
-  (** [move_to p x y] moves the path's current point to ([x], [y]) *)
-
-  val line_to: t -> x:float -> y:float -> unit
-  (** [line_to p x y] draws a line from the path's current point to ([x],
-      [y]) and sets the current point to ([x], [y]) *)
-
-  val rel_move_to: ?rot:float -> t -> x:float -> y:float -> unit
-  (** [rel_move_to p x y] shifts the path's current point of [x]
-      horizontally and [y] vertically.
-
-      @param rot to consider a rotation of [rot] radians (default: [0.]). *)
-
-  val rel_line_to: ?rot:float -> t -> x:float -> y:float -> unit
-  (** [rel_line_to p x y] shifts the path's current point of [x]
-      horizontally and [y] vertically and draws a line between the
-      current and the new point.
-
-      @param rot (default: 0.) to consider a rotation of [rot] radians *)
-
-  val rectangle: t -> x:float -> y:float -> w:float -> h:float -> unit
-  (** [rectangle p x y w h] draws a rectangle specified by ([x], [y], [w],
-      [h]) but does not move the path's current point. *)
-
-  val curve_to: t -> x1:float -> y1:float -> x2:float -> y2:float ->
-    x3:float -> y3:float -> unit
-  (** [curve_to p x1 y1 x2 y2 x3 y3] draws a cubic Bezier curve using the
-      path's current point as first point (x0, y0) if it is set, else
-      ([x1, y1]).  Sets the path's current point to ([x3], [y3]) *)
-
-  val arc: t -> r:float -> a1:float -> a2:float -> unit
-  (** [arc p r a1 a2] draws an arc starting at the path's current
-      point. The starting angle is [a1], the radius [r] and the arc is
-      drawn clockwise to the angle [a2]. The angles are given in
-      radians.  *)
-
-  val close: t -> unit
-  (** [close p] Closes the path. It is usually not required to close a
-      path, this is useful only to ensure the path won't be extended. *)
-
-  val stroke_on_backend: ?limits:float * float * float * float ->
-    t -> Backend.t -> unit
-  (** [stroke_on_backend p bk] strokes the path [p] on the backend
-      [bk]. It will not clear the path [p] but will clear the path of
-      [bk].
-
-      @param limits a quartet of float indicating where to clip the
-      path. Default: the unit rectangle. One can use (-infinity,
-      -infinity, infinity, infinity) for no clip. *)
-
-  val fill_on_backend: ?limits:float * float * float * float ->
-    t -> Backend.t -> unit
-  (** [fill_on_backend p bk] fills in the path [p] on the backend
-      [bk]. It will not clear the path [p] but will clear the path of
-      [bk].
-
-      @param limits a quartet of float indicating where to clip the
-      path. Default: the unit rectangle. One can use (neg_infinity,
-      neg_infinity, infinity, infinity) for no clip. *)
-
-  val current_point: t -> float * float
-  (** [current_point p] returns the current point of the path *)
-
-  val transform: t -> (float * float -> float * float) -> t
-  (** [transform p f] returns a new path that is the path [p] transformed by
-      function [f]. It only modifies end points of paths primitives and
-      extents are leaved the same. *)
-
-  val print_path: t -> unit
-  (** [print_path p] Debug function (TODO hide it) *)
-
-  val add: t -> t -> unit
-  (** [add p to_add] Adds the path [to_add] to the end of [p] *)
-
-end
-
-
-(** Tics position and labels. *)
-module Tics :
-sig
-
-
-  type labels =
-  | No_label
-  | Text of (string * float) array (* TODO use lists *)
-  | Number of int
-  | Expnumber of float
-  | Expnumber_named of float * string
-  | Custom of (float -> string option) (* TODO no option needed *)
-
-  type tic =
-  | Major of string option * float
-  | Minor of float
-
-  type t =
-  | Fixed of labels * float list
-  | Fixed_norm of labels * float list
-  | Equidistants of labels * float * float * int
-  | Auto of labels
-
-  val tics: bool -> float -> float -> t -> tic list
-
-end
-
 
 
 (** Area on which graphs can be made. *)
@@ -860,26 +924,27 @@ sig
 
   val sync : ?x:bool -> ?y:bool -> t -> t -> unit
 
-  val layout_grid : ?syncs:(bool * bool * bool * bool) ->
-    t -> int -> int -> t array
-  (** [layout_grid parent n_cols n_rows] creates [n_cols] * [n_rows]
-      viewports layouted in a grid and returns them in an array of
-      viewports
+  val grid : ?syncs:(bool * bool * bool * bool) -> t -> int -> int -> t array array
+  (** [grid parent nx ny] returns [vp] an array of [nx] * [ny]
+      sub-viewports of [parent]  arranged in a grid of [nx] columns and
+      [ny] rows.  The bottom left viewport is [vp.(0).(0)], the one to
+      its right (resp. abobve) is [vp.(1).(0)] (resp. [vp.(0).(1)]).
 
-      @param syncs (cx, cy, rx, ry) should we synchronize the x axis
-      along the columns ? The y axis alon the columns ? The x axis
-      along the rows ? The y axis along the rows ?
+      @param syncs (cx, cy, rx, ry) where [cx] (resp. [cy]) says whether
+      to synchronize the X-axis (resp. the [Y-axis]) along the columns
+      and [rx] (resp. [ry]) says whether to synchronize the X-axis
+      (resp. the Y-axis) along the rows.  Default: all [false].
   *)
-  val layout_rows : ?syncs:(bool * bool) -> t ->
-    int -> t array
-  (** [layout_rows parent n_rows] creates [n_rows] viewports layouted in a
-      column and returns them in an array of viewpors
 
-      @param syncs the axes to synchronize (x, y)
+  val rows : ?syncs:(bool * bool) -> t -> int -> t array
+  (** [rows parent ny] returns [vp] an array of [ny] viewports arranged
+      in a column, the bottom one being [vp.(0)].
+
+      @param syncs the axes to synchronize (x, y).  Default: both [false].
   *)
-  val layout_columns : ?syncs:(bool * bool) -> t ->
-    int -> t array
-  (** [layout_cols parent n_cols] creates [n_cols] viewports layouted in a
+
+  val columns : ?syncs:(bool * bool) -> t -> int -> t array
+  (** [colimns parent nx] creates [n_cols] viewports layouted in a
       row and returns them in an array of viewports
 
       @param syncs the axes to synchronize (x, y)
@@ -1012,8 +1077,35 @@ sig
   (** [auto_fit vp x0 y0 x1 y1] ensures that the rectangle delimited by
       (x0, y0) and (x1, y1) is included into the axes' ranges *)
 
+  val fit : t -> Matrix.rectangle -> unit
+  (** [fit vp r] ensures that the rectangle [r] is included into the
+      axes ranges. *)
+
   val save : t -> unit
   val restore : t -> unit
+
+end
+
+(** Module handling point styles and marks. *)
+module Pointstyle :
+sig
+
+  exception Error of string
+    (**Raised for undefined point styles.*)
+
+  type name = string
+  (** Point styles are identified by strings. *)
+
+  val add : name:name -> (Backend.t -> unit) -> Matrix.rectangle -> unit
+  (** [add name f extents] adds to the existing point styles, a new
+      point style, referenced under the name [name]. This point style
+      is made using the function [f]; the extents it takes is given by
+      [extents]. The behaviour of adding a new point style whose name
+      is already used by another is the same as the core [Map.S.add]
+      (that is, the previous binding disappears).*)
+
+  val names : unit -> name list
+  (** @return a list of all names declared. *)
 
 end
 
@@ -1079,6 +1171,34 @@ sig
 end
 
 
+(** Tics position and labels. *)
+module Tics :
+sig
+
+
+  type labels =
+  | No_label
+  | Text of (string * float) array (* TODO use lists *)
+  | Number of int
+  | Expnumber of float
+  | Expnumber_named of float * string
+  | Custom of (float -> string option) (* TODO no option needed *)
+
+  type tic =
+  | Major of string option * float
+  | Minor of float
+
+  type t =
+  | Fixed of labels * float list
+  | Fixed_norm of labels * float list
+  | Equidistants of labels * float * float * int
+  | Auto of labels
+
+  val tics: bool -> float -> float -> t -> tic list
+
+end
+
+
 (** Routines to draw basic axes systems in a 2-dimensional space. One can
     either draw axes separately using add_(x|y)_axis or use a full default
     axes system with box or cross. *)
@@ -1097,7 +1217,8 @@ sig
       should have a value between 0 and 1. Using this kind of
       offset, one can ensure to always get the same rendering *)
 
-  val add_x_axis : ?major:(string * float) -> ?minor:(string * float) ->
+  val add_x_axis : ?grid:bool ->
+    ?major:(string * float) -> ?minor:(string * float) ->
     ?start:Arrows.style -> ?stop:Arrows.style ->
     ?tics:Tics.t -> ?offset:offset -> Viewport.t -> unit
   (** [add_x_axis vp] adds an x-axis to the viewport [vp].
@@ -1112,7 +1233,8 @@ sig
 
       @param offset where to place the axis (y-coordinate) *)
 
-  val add_y_axis : ?major:(string * float) -> ?minor:(string * float) ->
+  val add_y_axis : ?grid:bool ->
+    ?major:(string * float) -> ?minor:(string * float) ->
     ?start:Arrows.style -> ?stop:Arrows.style ->
     ?tics:Tics.t -> ?offset:offset -> Viewport.t -> unit
   (** [add_y_axis vp] adds an y-axis to the viewport [vp].
@@ -1127,7 +1249,7 @@ sig
 
       @param offset where to place the axis (x-coordinate) *)
 
-  val box : ?tics:Tics.t -> ?tics_alt:Tics.t -> Viewport.t -> unit
+  val box : ?grid:bool -> ?tics:Tics.t -> ?tics_alt:Tics.t -> Viewport.t -> unit
   (** [box vp] A default axes system consisting of four axes, one at
       each border of the viewport [vp], resulting in a box surrounding
       the viewport.
@@ -1147,9 +1269,7 @@ sig
 end
 
 
-(** Some utils to sample a function. The main routine, samplefxy, is
-    mainly based on an article from Graphics Gems vol. 5, page 173:
-    Adaptive Sampling of Parametric Curves. *)
+(** Adaptative sampling of functions. *)
 module Sampler :
 sig
 
@@ -1158,9 +1278,30 @@ sig
       point tm between t1 and t2 which will be used to decide if we
       need to increment precision or not. *)
 
-  type criterion = float -> float -> float -> float -> float -> float -> bool
-  (** A criterion is a function [f x1 y1 xm ym x2 y2] which returns true
-      if we need to increment precision. *)
+  type cost = float -> float -> float -> float -> float -> float -> float
+  (** A cost [f x0 y0 xm ym x1 y1] which returns the cost measuring how
+      much the three points [(x0, y0)], [(xm, ym)], and [(x1, y1)]
+      differ from a straight line.  A cost of [0.] means one is
+      satisfied with it. *)
+
+  val xy : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
+    (float -> float * float) -> float -> float -> float array * float array
+  (** [create f t1 t2] samples the parametric function f from t1 to t2,
+      returning a list of the points in the sample.
+
+      @param tlog do we need to step in a logarithmic way ?
+
+      @param min_step don't increment precision more than this threshold
+
+      @param n is a maximum number of evaluation of [f] we allow.
+               Default: [100].
+      @param strategy a customized strategy.
+      @param cost a customized cost.
+  *)
+
+  val x : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
+    (float -> float) -> float -> float -> float array * float array
+
 
   val strategy_midpoint : strategy
   (** The default strategy: choose the middle point *)
@@ -1173,50 +1314,14 @@ sig
   (** A more efficient strategy that avoids aliasing sampling: chooses
       randomly a points between t1 and t2 in its 10% center interval *)
 
-  val criterion_none : criterion
-  (** A criterion that tells to never increment precision *)
 
-  val criterion_angle : ?threshold:float -> criterion
+  val cost_angle : cost
   (** A criterion that tells to increment precision only if the angle
-      xMy is leather than threshold
+      xMy is leather than threshold. *)
 
-      @param threshold the minimal angle under which no more precision
-      is needed
-  *)
-
-  val criterion_angle_log : bool -> bool -> ?threshold:float -> criterion
+  val cost_angle_log : bool -> bool -> cost
   (** Same criterion as criterion_angle, but one can tell that the x/y
       axis is logarithmic, and increment precision in a more wise way *)
-
-  type t
-  (** A sampler *)
-
-  val create : ?tlog:bool -> ?min_step:float -> ?nsamples:int ->
-    ?strategy:strategy -> ?criterion:criterion ->
-    (float -> float * float) -> float -> float -> t
-  (** [create f t1 t2] samples the parametric function f from t1 to t2,
-      returning a list of the points in the sample.
-
-      @param tlog do we need to step in a logarithmic way ?
-
-      @param min_step don't increment precision more than this threshold
-
-      @param nsamples base number of samples wanted (cut the space
-      between t1 and t2 in nsamples fragments of equivalent size,
-      depending on tlog)
-
-      @param strategy a customized strategy, which can be chosen among
-      those in this module
-
-      @param criterion a customized criterion, which can be chosen among
-      those in this module
-  *)
-
-  val reset : t -> unit
-  (** [reset s] Resets the sampler *)
-
-  val next : t -> (float * float) option
-  (** [next s] Returns the next point of the sampling *)
 
 end
 
@@ -1264,26 +1369,7 @@ sig
     Bigarray.Array2.t -> t
   (** [of_fortran2 b] Transforms a bigarray of float couples with a
       Fortran layout into an iterator returning those couples *)
-  val of_function : ?tlog:bool -> ?min_step:float -> ?nsamples:int ->
-    ?strategy:Sampler.strategy -> ?criterion:Sampler.criterion ->
-    (float -> float * float) -> float -> float -> t
-  (** [of_function f a b] Create an iterator from a function (R to R x
-      R), refining when necessary to get a smooth curve
 
-      @param tlog do we need to step in a logarithmic way ?
-
-      @param min_step don't increment precision more than this threshold
-
-      @param nsamples base number of samples wanted (cut the space
-      between t1 and t2 in nsamples fragments of equivalent size,
-      depending on tlog)
-
-      @param strategy a customized strategy, which can be chosen among
-      those in this module
-
-      @param criterion a customized criterion, which can be chosen among
-      those in this module
-  *)
   val of_last : (float * float -> float * float) -> float * float -> t
   (** [of_last f start] Create an iterator which creates its next
       element from the last he has computed using the function [f], starting
@@ -1296,10 +1382,6 @@ sig
   val iter : (float * float -> unit) -> t -> unit
   (** [iter f iter] apply the function [f] to all values left in the
       iterator (the iterator won't be resetted !) *)
-  val iter_cache : (float * float -> unit) -> t -> (float * float) list
-  (** [iter_cache f iter] apply the function [f] to all values left in
-      the iterator. Those values are stored reversed in a list which is
-      returned *)
 
   val constant_iterator : float -> t
   (** [constant_iterator c] Creates an iterator which starts at (0.,
@@ -1377,43 +1459,17 @@ sig
       default is [Boxes 0.5]) *)
 
   module Function : sig
-    type 'a sampling
-    (** A sampling, the only interresting values for 'a are float and
-        float * float *)
+    val x : ?tlog:bool -> ?n:int ->
+      ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
+      ?pathstyle:pathstyle -> ?base:(float -> float) ->
+      ?fill:bool -> ?fillcolor:Color.t ->
+      Viewport.t -> (float -> float) -> float -> float -> unit
 
-    val sampling : ?tlog:bool -> ?strategy:Sampler.strategy ->
-      ?criterion:Sampler.criterion -> ?min_step:float -> ?nsamples:int ->
-      (float -> 'a) -> float -> float -> 'a sampling
-    (** [sampling f a b] Creates a sampling for the function [f] between
-        [a] and [b], see Sampler for more explanations over the
-        optional arguments *)
+    val xy : ?tlog:bool -> ?n:int ->
+      ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
+      ?pathstyle:pathstyle -> ?fill:bool -> ?fillcolor:Color.t ->
+      Viewport.t -> (float -> float * float) -> float -> float -> unit
 
-    val x : ?pathstyle:pathstyle -> ?base:(float -> float) -> Viewport.t -> float sampling -> unit
-    (** [x vp sampling] Plots [sampling] on [vp], the sampling needs to
-        be a function sampling, and not a curve sampling
-
-        @param pathstyle which pathstyle to use (see pathstyle type) *)
-
-    val xy : ?fill:bool -> ?fillcolor:Color.t -> ?pathstyle:pathstyle ->
-      Viewport.t -> (float * float) sampling -> unit
-    (** [xy vp sampling] Plots [sampling] on [vp], the sampling needs to
-        be a curve sampling
-
-        @fill fill the curve delimited by the function ? (default: false)
-
-        @fillcolor color to use for the filling
-
-        @param pathstyle which pathstyle to use (see pathstyle type) *)
-
-    val fill : ?fillcolor:Color.t -> ?base:(float sampling) -> Viewport.t ->
-      float sampling -> unit
-    (** [fill vp sampling] Fills the region between two function samplings
-
-        @param fillcolor the color to use for the filling
-
-        @param base the other sampling used for the filling. The fill
-        function will handle non concordant domains and samplings that
-        "cross over" one another *)
   end
 
   module type Common = sig
@@ -1582,13 +1638,19 @@ sig
       simple pie charts *)
 
 end
+
 (** A 2D plotting library with various backends. *)
 
 
 val init : ?lines:float -> ?text:float -> ?marks:float ->
-  ?w:float -> ?h:float -> ?dirs:string list -> string -> Viewport.t
-(** [init backend_name] initializes Archimedes and returns a main
-    viewport using the backend specified.
+  ?w:float -> ?h:float -> ?dirs:string list -> string list -> Viewport.t
+(** [init backend] initializes Archimedes and returns a main viewport
+    using the backend specified.  The first element of [backend] is
+    the name (case insensitive) of the underlying engine.  It may be
+    followed by one or several options.  For example, ["Graphics"] for
+    the graphics backend or ["Cairo"; "PNG"; filename] for the Cairo
+    backend, using a PNG surface to be saved to [filename].  The empty
+    list selects the graphics backend.
 
     @param lines the width of the lines (default: 1. corresponds to
     filling a biggest square of the viewport with 500 lines)
@@ -1611,12 +1673,15 @@ val init : ?lines:float -> ?text:float -> ?marks:float ->
     Archimedes were installed.
 *)
 
+val backend_of_filename : string -> string list
+(** Selects a backend according to the filename suffix.  If the suffix
+    is not matched (this in particular for [""]), the graphics backend
+    is selected. *)
+
 val close : Viewport.t -> unit
 
-
-val fx : ?tlog:bool ->
-  ?strategy:Sampler.strategy -> ?criterion:Sampler.criterion ->
-  ?min_step:float -> ?nsamples:int ->
-  ?fill:bool -> ?fill_base:(float -> float) -> ?fillcolor:Color.t ->
-  ?pathstyle:Plot.pathstyle -> Viewport.t ->
-  (float -> float) -> float -> float -> unit
+val fx : ?tlog:bool -> ?n:int ->
+  ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
+  ?pathstyle:Plot.pathstyle -> ?base:(float -> float) ->
+  ?fill:bool -> ?fillcolor:Color.t ->
+  Viewport.t -> (float -> float) -> float -> float -> unit

@@ -18,10 +18,10 @@
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the file
    LICENSE for more details. *)
 
-open Functions
-
+open Utils
 module V = Viewport
 
+(* FIXME: Insets seem to duplicate the fact that paths can compute extents *)
 module Insets = struct
   type insets = {
     mutable xmin : float; mutable xmax : float;
@@ -147,9 +147,7 @@ let fill_samplings vp fillcolor f_samples g_samples =
     in
     oriented_advance_samplings
       ~until:(fun ~ux' ~uy' ~ux ~uy ~dx' ~dy' ->
-        not (Functions.is_nan uy') && not (Functions.is_nan uy)
-        && not (Functions.is_nan dy')
-        && ux >= dx')
+        not (is_nan uy') && not (is_nan uy) && not(is_nan dy') && ux >= dx')
       ~next:advance_in_region
       ~last:(fun ~acc:_ ~ux':_ ~uy':_ ~dx'':_ ~dy'':_ ~dx':_ ~dy':_ _ -> ())
       false
@@ -177,7 +175,7 @@ let fill_samplings vp fillcolor f_samples g_samples =
           ~dx'' ~dy'' ~dx' ~dy'
     in
     oriented_advance_samplings
-      ~until:(fun ~ux':_ ~uy':_ ~ux:_ ~uy ~dx':_ ~dy':_ -> Functions.is_nan uy)
+      ~until:(fun ~ux':_ ~uy':_ ~ux:_ ~uy ~dx':_ ~dy':_ -> is_nan uy)
       ~next:close_region_and_advance
       ~last:close_region
       swap_up_down
@@ -285,6 +283,92 @@ let stack ?(colors=[|Color.black|]) ?(fillcolors=[| |])
     Array.iteri draw paths;
     V.restore vp
 
+module Function = struct
+  let draw_marks vp pathstyle x y =
+    match pathstyle with
+    | Lines | Impulses | Boxes _ | Interval _ -> ()
+    | Points m | Linespoints m ->
+      for i = 0 to Array.length x - 1 do
+        V.mark vp x.(i) y.(i) m
+      done
+
+  let default_fillcolor = Color.rgb 0.95 0.95 0.95
+
+  let x ?tlog ?n ?strategy ?cost ?(pathstyle=Lines) ?base
+      ?(fill=false) ?(fillcolor=default_fillcolor) vp f a b =
+    (* FIXME: Implies we need to redo the sampling of we switch to log
+       scales? *)
+    let x, y = Sampler.x ?tlog ?n ?strategy ?cost f a b in
+    (* Only the Y range is needed (the X one is known) *)
+    let ymin = ref y.(0) and ymax = ref y.(0) in
+    for i = 1 to Array.length y - 1 do
+      if y.(i) < !ymin then ymin := y.(i)
+      else if y.(i) > !ymax then ymax := y.(i)
+    done;
+    V.fit vp { Matrix.x = a; y = !ymin; w = b -. a; h = !ymax -. !ymin};
+    (* FIXME: there must be a better way, this is precisely why we
+       added "optimizations" to the Path structure. *)
+    (* Fill *)
+    if fill then (
+      let path = Path.make () in
+      Path.unsafe_line_of_array path x y;
+      (match base with
+      | None ->
+        Path.line_to path b 0.;
+        Path.line_to path a 0.
+      | Some g ->
+        (* Notice that the sampling is in reversed order: *)
+        let bx, by = Sampler.x ?tlog ?n ?strategy ?cost g b a in
+         (* FIXME: fill_samplings needs to be rewritten?? *)
+        Path.unsafe_line_of_array path bx by
+      );
+      Path.close path;
+      let color = V.get_color vp in
+      V.set_color vp fillcolor;
+      V.fill ~path vp V.Data;
+      Path.clear path;
+      V.set_color vp color;
+    );
+    let path = Path.make () in
+    let base = match base with None -> (fun _ -> 0.) | Some b -> b in
+    (* Lines *)
+    (match pathstyle with
+    | Lines | Linespoints _ -> Path.unsafe_line_of_array path x y
+    | Impulses ->
+      for i = 0 to Array.length x - 1 do
+        Path.move_to path x.(i) (base x.(i));
+        Path.line_to path x.(i) y.(i);
+      done
+    | Points _ -> ()
+    | Boxes w ->
+      for i = 0 to Array.length x - 1 do
+        let b = base x.(i) in
+        Path.rectangle path ~x:(x.(i) -. w *. 0.5) ~y:b ~w ~h:(y.(i) -. b)
+      done
+    | Interval size ->
+      for i = 0 to Array.length x - 1 do
+        Path.move_to path x.(i) y.(i);
+        Arrows.path_line_to ~size ~head:Arrows.Stop ~tail:Arrows.Stop
+          path x.(i) y.(i)
+      done);
+    V.stroke ~path vp V.Data;
+    draw_marks vp pathstyle x y
+
+  (* FIXME: finish implementing *)
+  let xy ?tlog ?n ?strategy ?cost
+      ?(pathstyle=Lines) ?(fill=false)
+      ?(fillcolor=default_fillcolor) vp f a b =
+    let path = Path.make () in
+    let x, y = Sampler.xy ?tlog ?n ?strategy ?cost f a b in
+    Path.unsafe_line_of_array path x y;
+    V.fit vp (Path.extents path);
+    if fill then V.fill ~path vp V.Data;
+    V.stroke ~path vp V.Data;
+    draw_marks vp pathstyle x y
+
+end
+
+
 (* The following functions simplify the implementation of x, xy and stack
    in standard submodules *)
 let basex transform ?base ?fill ?fillcolor ?pathstyle vp data =
@@ -358,74 +442,6 @@ module C = struct
     | Some b ->  basex Iterator.of_c ~base:(Iterator.of_c b)
   let xy = basexy Iterator.of_c2
   let stack = basestack Iterator.of_c
-end
-
-module Function = struct
-  type 'a sampling = {
-    strategy: Sampler.strategy;
-    criterion: Sampler.criterion;
-    min_step: float;
-    tlog: bool;
-    nsamples: int;
-    fct: (float -> 'a);
-    t0: float;
-    tend: float;
-    mutable data: (float * float) list
-  }
-
-  let sampling ?(tlog=false) ?(strategy=Sampler.strategy_midpoint)
-      ?(criterion=Sampler.criterion_none) ?min_step ?(nsamples=100)
-      f a b =
-    let min_step = match min_step with
-      | None -> (b -. a) *. 1E-5
-      | Some x -> x
-    in
-    { strategy = strategy;
-      criterion = criterion;
-      tlog = tlog;
-      min_step = min_step;
-      nsamples = nsamples;
-      fct = f;
-      t0 = a;
-      tend = b;
-      data = [] }
-
-  let update_samples_x (sampling:float sampling) =
-    (* TODO: We should maybe fuse the old and new samples with a new
-       criterion or something ? *)
-    if sampling.data = [] then
-      let sampler = Iterator.of_function ~tlog:sampling.tlog
-        ~min_step:sampling.min_step ~nsamples:sampling.nsamples
-        ~strategy:sampling.strategy ~criterion:sampling.criterion
-        (fun x -> x, sampling.fct x) sampling.t0 sampling.tend
-      in
-      sampling.data <- List.rev (Iterator.iter_cache (fun _ -> ()) sampler)
-
-  let x ?(pathstyle=Lines) ?(base=fun _ -> 0.) vp sampling =
-    let path = Path.make () in
-    let insets = Insets.make () in
-    update_samples_x sampling;
-    let f p =
-      Insets.includepoint insets p;
-      let x, _ = p in
-      draw_data pathstyle path ~base:(base x) p
-    in
-    List.iter f sampling.data;
-    Insets.fit vp insets;
-    V.stroke ~path vp V.Data;
-    List.iter (draw_point pathstyle vp) sampling.data
-
-  let xy ?fill ?fillcolor ?pathstyle vp sampling =
-    ()
-
-  let fill ?(fillcolor=Color.rgb 0.95 0.95 0.95) ?base vp f_sampling =
-    let base = match base with
-      | None -> sampling (fun x -> 0.) f_sampling.t0 f_sampling.tend
-      | Some base_sampling -> base_sampling
-    in
-    update_samples_x f_sampling;
-    update_samples_x base;
-    fill_samplings vp fillcolor f_sampling.data base.data
 end
 
 (* Avoid module name clash. *)

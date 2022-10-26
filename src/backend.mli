@@ -58,7 +58,16 @@ sig
   val get_line_join: t -> line_join
 
   val move_to : t -> x:float -> y:float -> unit
+  (** Begin a new sub-path.  After this call the current point will be
+      [(x, y)]. *)
   val line_to : t -> x:float -> y:float -> unit
+  (** [line_to bk x y] Adds a line to the path from the current point
+      to position [(x, y)] in the current backend coordinates.  After
+      this call the current point will be [(x, y)].
+
+      If there is no current point before the call to [line_to] this
+      function will behave as {!move_to}[ bk x y]. *)
+
   val rel_move_to : t -> x:float -> y:float -> unit
   val rel_line_to : t -> x:float -> y:float -> unit
 
@@ -96,9 +105,34 @@ sig
   val fill : t -> unit
   val fill_preserve : t -> unit
 
+  val stroke_path_preserve : t -> Path.t -> unit
+  (** [stroke_path bk p] stroke the abstract path [p], where its
+      coordinates are interpreted in the current transformation
+      matrix.  Of course, the current clipping will be obeyed.  After
+      this operation, the current path in [bk] is the transformation
+      of [p].
+
+      The internal representation of the path is available in
+      [Archimedes_internals.Path]. *)
+  val fill_path_preserve : t -> Path.t -> unit
+  (** [fill_path_preserve] is similar to [stroke_path_preserve] except
+      that it fills the path. *)
+
+  val show : t -> unit
+  (** Some backends may not show immediately the action of {!stroke},
+      {!fill}, {!stroke_path_preserve},... immediately (usually
+      because it is expensive but also to avoid flicker during
+      animations).  [show bk] forces the backend to update.  *)
+
   val clip_rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
   (** Establishes a new clip rectangle by intersecting the current
-      clip rectangle.  This {i may clear} the current path. *)
+      clip rectangle.  This {i may clear} the current path.  Calling
+      {clip_rectangle} can only make the clip region smaller, never
+      larger.  For [clip_rectangle] to have only a local effect, put
+      it in a {!save} / {!restore} group.
+
+      [clip_rectangle] is garantee to respect the CTM only if the
+      components [xy] and [yx] of the matrix are both [0.]. *)
 
   val save : t -> unit
   (** Save the current state of the backend.  Note that
@@ -168,18 +202,21 @@ exception Error of error * string
 
 include T
 
-val make : ?dirs:string list -> string -> float -> float -> t
-  (** [make backend width height] creates a new backend of the given
-      dimensions.  The units of the dimensions are backend dependent.
+val make : ?dirs:string list -> string list -> float -> float -> t
+(** [make backend width height] creates a new backend of the
+    given dimensions.  The units of the dimensions are backend
+    dependent.
 
-      [backend] is the name of the underlying engine, followed by one
-      or several options separated by spaces.  For example, "Graphics"
-      for the graphics backend or "Cairo PNG filename" for the Cairo
-      backend, using a PNG surface to be saved to [filename]. *)
+    The first element of [backend] is the name (case insensitive) of
+    the underlying engine.  It may be followed by one or several
+    options.  For example, ["Graphics"] for the graphics backend or
+    ["Cairo"; "PNG"; filename] for the Cairo backend, using a PNG
+    surface to be saved to [filename].  The empty list selects the
+    graphics backend. *)
 
 val close : t -> unit
-  (** Close the handle.  For some backends, the output will not be
-      complete until this function is called. *)
+(** Close the handle.  For some backends, the output will not be
+    complete until this function is called. *)
 
 val height : t -> float
   (** Returns the width of the backend canvas. *)
@@ -192,7 +229,7 @@ val registered: unit -> string list
   (** Return the list of registered (i.e. loaded) backends. *)
 
 val available : dirs:string list -> string list
-    (** Return the list of available backends in the given directories. *)
+(** Return the list of available backends in the given directories. *)
 
 
 (************************************************************************)
@@ -217,13 +254,13 @@ sig
       some final work need to be done for some of them. *)
 end
 
-  module Register(B: Capabilities) : sig end
-    (** The {i side effect} of this functor application is to register
-        the functions of the backend [B] under the name [B.name].
+module Register(B: Capabilities) : sig end
+(** The {i side effect} of this functor application is to register
+    the functions of the backend [B] under the name [B.name].
 
-        A backend [B] must be declared in a file archimedes_[B.name]
-        (compiled to a .cmo and/or .cmxs library) and the functor
-        application must be executed as part of the initialisation code.
-        We recommend the use of [let module U = Register(B) in ()] to
-        perform the registration.  *)
+    A backend [B] must be declared in a file archimedes_[B.name]
+    (compiled to a .cmo and/or .cmxs library) and the functor
+    application must be executed as part of the initialisation code.
+    We recommend the use of [let module U = Register(B) in ()] to
+    perform the registration.  *)
 

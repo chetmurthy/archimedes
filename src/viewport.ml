@@ -195,7 +195,7 @@ and Viewport : sig
   type coord_name = Device | Graph | Data | Orthonormal
   val get_coord_from_name : t -> coord_name -> Coordinate.t
   val init : ?lines:float -> ?text:float -> ?marks:float -> ?w:float ->
-    ?h:float -> ?dirs:string list -> string -> t
+    ?h:float -> ?dirs:string list -> string list -> t
   val make : ?lines:float -> ?text:float -> ?marks:float ->
     t -> coord_name -> float -> float -> float -> float ->
     (t -> float -> float -> unit) -> t
@@ -210,11 +210,11 @@ and Viewport : sig
   val sync_unit_size : ?x:bool -> ?y:bool -> t -> t -> unit
   val sync : ?x:bool -> ?y:bool -> t -> t -> unit
 
-  val layout_grid : ?syncs:(bool * bool * bool * bool) ->
-    t -> int -> int -> t array
-  val layout_rows : ?syncs:(bool * bool) -> t ->
+  val grid : ?syncs:(bool * bool * bool * bool) ->
+    t -> int -> int -> t array array
+  val rows : ?syncs:(bool * bool) -> t ->
     int -> t array
-  val layout_columns : ?syncs:(bool * bool) -> t ->
+  val columns : ?syncs:(bool * bool) -> t ->
     int -> t array
   val fixed_left : float -> t -> t * t
   val fixed_right : float -> t -> t * t
@@ -319,6 +319,7 @@ and Viewport : sig
   val do_instructions : t -> unit
 
   val auto_fit : t -> float -> float -> float -> float -> unit
+  val fit : t -> Matrix.rectangle -> unit
 
   val save : t -> unit
   val restore : t -> unit
@@ -455,7 +456,7 @@ end = struct
     in
     if coord_name = Data && not notransform &&
       (vp.axes_system.Axes.x.Axes.log || vp.axes_system.Axes.y.Axes.log) then
-      Path.transform p (data_norm_log vp.axes_system)
+      Path.map p (data_norm_log vp.axes_system)
     else p
 
   (* Merges two non-sorted lists without duplicates. *)
@@ -500,31 +501,38 @@ end = struct
   let set_line_join_direct vp join () =
     Backend.set_line_join vp.backend join
 
+  let apply_clip vp coord_name =
+    if vp.clip then (
+      match coord_name with
+      | Data ->
+        let x = xmin vp and y = ymin vp in
+        Backend.clip_rectangle vp.backend x y (xmax vp -. x) (ymax vp -. y);
+      | Orthonormal ->
+        let maxx, maxy = ortho_from vp Device (1., 1.) in
+        Backend.clip_rectangle vp.backend 0. 0. maxx maxy
+      | Device | Graph ->
+        Backend.clip_rectangle vp.backend 0. 0. 1. 1.
+    )
+
   let stroke_direct ?path vp coord_name () =
     let path = get_path vp path coord_name in
     let coord = get_coord_from_name vp coord_name in
+    Backend.save vp.backend;
     let ctm = Coordinate.use vp.backend coord in
-    let limits = if vp.clip then
-      if coord_name = Data then (xmin vp, xmax vp, ymin vp, ymax vp)
-      else if coord_name = Orthonormal then
-        let maxx, maxy = ortho_from vp Device (1., 1.) in (0., maxx, 0., maxy)
-      else (0., 1., 0., 1.)
-    else (neg_infinity, infinity, neg_infinity, infinity) in
-    Path.stroke_on_backend ~limits path vp.backend;
-    Coordinate.restore vp.backend ctm
+    apply_clip vp coord_name;
+    Backend.stroke_path_preserve vp.backend path;
+    (* Coordinate.restore vp.backend ctm *) (* no need, CTM restored too *)
+    Backend.restore vp.backend
 
   let fill_direct ?path vp coord_name () =
     let path = get_path vp path coord_name in
     let coord = get_coord_from_name vp coord_name in
+    Backend.save vp.backend;
     let ctm = Coordinate.use vp.backend coord in
-    let limits = if vp.clip then
-      if coord_name = Data then xmin vp, xmax vp, ymin vp, ymax vp
-      else if coord_name = Orthonormal then
-        let maxx, maxy = ortho_from vp Device (1., 1.) in (0., maxx, 0., maxy)
-      else 0., 1., 0., 1.
-    else neg_infinity, infinity, neg_infinity, infinity in
-    Path.fill_on_backend ~limits path vp.backend;
-    Coordinate.restore vp.backend ctm
+    apply_clip vp coord_name;
+    Backend.fill_path_preserve vp.backend path;
+    (* Coordinate.restore vp.backend ctm *) (* no need, CTM restored too *)
+    Backend.restore vp.backend
 
   let clip_rectangle_direct vp ~x ~y ~w ~h () =
     Backend.clip_rectangle vp.backend x y w h
@@ -549,7 +557,7 @@ end = struct
     Coordinate.restore vp.backend ctm
 
   let path_direct vp ~x ~y path () =
-    orthoinstr_direct vp ~x ~y (Path.stroke_on_backend path)
+    orthoinstr_direct vp ~x ~y (fun b -> Backend.stroke_path_preserve b path)
 
   let mark_direct vp ~x ~y name () =
     orthoinstr_direct vp ~x ~y (Pointstyle.render name)
@@ -666,6 +674,7 @@ end = struct
     vp.clip = false
 
   let set_color vp c =
+    vp.color <- c;  (* one may query the viewport! *)
     add_instruction (set_color_direct vp c) vp
 
   let set_global_line_cap vp lc =
@@ -920,6 +929,10 @@ end = struct
     (* Update x0, xend ranges, unit_size and gx0, gxend and redraw... *)
     update_axes_ranges vp !xupdated !yupdated
 
+  let fit vp r =
+    auto_fit vp r.Matrix.x r.Matrix.y (r.Matrix.x +. r.Matrix.w)
+      (r.Matrix.y +. r.Matrix.h)
+
   (* Utility function for (x|y)range *)
   let update_axis vp axis axis_size x0 xend =
     if x0 < xend then begin
@@ -1040,34 +1053,50 @@ end = struct
 (* Layouts
  ***********************************************************************)
 
+  let do_nothing_when_redim _ _ _ = ()
+
   (* Uniform grid; redim: identity *)
-  let layout_grid ?(syncs=(false, false, false, false)) vp rows cols =
+  let gen_grid vp nx ny ~cols_sync_x ~cols_sync_y ~rows_sync_x ~rows_sync_y
+      set get =
+    let xstep = 1. /. (float nx) and ystep = 1. /. (float ny) in
+    for x = 0 to nx - 1 do
+      for y = 0 to ny - 1 do
+        let xmin = float x *. xstep
+        and ymin = float y *. ystep in
+        let xmax = xmin +. xstep
+        and ymax = ymin +. ystep in
+        set x y (make vp Device xmin xmax ymin ymax do_nothing_when_redim);
+        if y > 0 then
+          sync ~x:cols_sync_x ~y:cols_sync_y (get x y) (get x 0);
+        if x > 0 then
+          sync ~x:rows_sync_x ~y:rows_sync_y (get x y) (get 0 y);
+      done
+    done
+
+  let grid ?(syncs=(false, false, false, false)) vp nx ny =
     let cols_sync_x, cols_sync_y, rows_sync_x, rows_sync_y = syncs in
-    let redim _ _ _ = () in
-    let xstep = 1. /. (float cols) and ystep = 1. /. (float rows) in
-    let ret = Array.make (rows * cols) vp in
-    let init_viewport i =
-      let x = i / rows and y = i mod rows in
-      let xmin = float x *. xstep
-      and ymin = float y *. ystep in
-      let xmax = xmin +. xstep
-      and ymax = ymin +. ystep in
-      ret.(i) <- make vp Device xmin xmax ymin ymax redim;
-      if i >= rows then
-        sync ~x:cols_sync_x ~y:cols_sync_y ret.(i) ret.(i mod rows);
-      if i mod rows > 0 then
-        sync ~x:rows_sync_x ~y:rows_sync_y ret.(i) ret.(i - (i mod rows))
-    in
-    for i = 0 to rows * cols - 1 do init_viewport i done;
+    let ret = Array.make_matrix nx ny vp in
+    let set x y v = ret.(x).(y) <- v
+    and get x y = ret.(x).(y) in
+    gen_grid vp nx ny ~cols_sync_x ~cols_sync_y ~rows_sync_x ~rows_sync_y
+      set get;
     ret
 
-  let layout_rows ?(syncs=false, false) vp n =
-    let sync_x, sync_y = syncs in
-    layout_grid ~syncs:(false, false, sync_x, sync_y) vp n 1
+  let rows ?syncs:((rows_sync_x, rows_sync_y)=(false, false)) vp n =
+    let ret = Array.make n vp in
+    let set _ y v = ret.(y) <- v
+    and get _ y = ret.(y) in
+    gen_grid vp 1 n ~cols_sync_x:false ~cols_sync_y:false
+      ~rows_sync_x ~rows_sync_y set get;
+    ret
 
-  let layout_columns ?(syncs=false, false) vp n =
-    let sync_x, sync_y = syncs in
-    layout_grid ~syncs:(sync_x, sync_y, false, false) vp 1 n
+  let columns ?syncs:((cols_sync_x, cols_sync_y)=(false, false)) vp n =
+    let ret = Array.make n vp in
+    let set x _ v = ret.(x) <- v
+    and get x _ = ret.(x) in
+    gen_grid vp n 1 ~cols_sync_x ~cols_sync_y
+      ~rows_sync_x:false ~rows_sync_y:false set get;
+    ret
 
   let fixed_left init_prop vp =
     let redim_fixed vp xfactor _ = begin

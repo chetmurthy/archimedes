@@ -2,9 +2,14 @@
 
 
 val init : ?lines:float -> ?text:float -> ?marks:float ->
-  ?w:float -> ?h:float -> ?dirs:string list -> string -> Viewport.t
-(** [init backend_name] initializes Archimedes and returns a main
-    viewport using the backend specified.
+  ?w:float -> ?h:float -> ?dirs:string list -> string list -> Viewport.t
+(** [init backend] initializes Archimedes and returns a main viewport
+    using the backend specified.  The first element of [backend] is
+    the name (case insensitive) of the underlying engine.  It may be
+    followed by one or several options.  For example, ["Graphics"] for
+    the graphics backend or ["Cairo"; "PNG"; filename] for the Cairo
+    backend, using a PNG surface to be saved to [filename].  The empty
+    list selects the graphics backend.
 
     @param lines the width of the lines (default: 1. corresponds to
     filling a biggest square of the viewport with 500 lines)
@@ -27,12 +32,15 @@ val init : ?lines:float -> ?text:float -> ?marks:float ->
     Archimedes were installed.
 *)
 
+val backend_of_filename : string -> string list
+(** Selects a backend according to the filename suffix.  If the suffix
+    is not matched (this in particular for [""]), the graphics backend
+    is selected. *)
+
 val close : Viewport.t -> unit
 
-
-val fx : ?tlog:bool ->
-  ?strategy:Sampler.strategy -> ?criterion:Sampler.criterion ->
-  ?min_step:float -> ?nsamples:int ->
-  ?fill:bool -> ?fill_base:(float -> float) -> ?fillcolor:Color.t ->
-  ?pathstyle:Plot.pathstyle -> Viewport.t ->
-  (float -> float) -> float -> float -> unit
+val fx : ?tlog:bool -> ?n:int ->
+  ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
+  ?pathstyle:Plot.pathstyle -> ?base:(float -> float) ->
+  ?fill:bool -> ?fillcolor:Color.t ->
+  Viewport.t -> (float -> float) -> float -> float -> unit

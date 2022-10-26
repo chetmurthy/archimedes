@@ -93,6 +93,9 @@ sig
   val stroke_preserve : t -> unit
   val fill : t -> unit
   val fill_preserve : t -> unit
+  val stroke_path_preserve : t -> Path.t -> unit
+  val fill_path_preserve : t -> Path.t -> unit
+  val show : t -> unit
 
   val clip_rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
 
@@ -152,6 +155,9 @@ type t = {
   stroke_preserve : unit -> unit;
   fill : unit -> unit;
   fill_preserve : unit -> unit;
+  stroke_path_preserve : Path.t -> unit;
+  fill_path_preserve : Path.t -> unit;
+  show : unit -> unit;
   clip_rectangle : x:float -> y:float -> w:float -> h:float -> unit;
 
   save: unit -> unit;
@@ -220,6 +226,9 @@ struct
         stroke_preserve = (fun () -> B.stroke_preserve handle);
         fill = (fun () -> B.fill handle);
         fill_preserve = (fun () -> B.fill_preserve handle);
+        stroke_path_preserve = B.stroke_path_preserve handle;
+        fill_path_preserve = B.fill_path_preserve handle;
+        show = (fun () -> B.show handle);
         clip_rectangle = B.clip_rectangle handle;
 
         save = (fun () -> B.save handle);
@@ -273,6 +282,9 @@ let stroke t = t.stroke()
 let stroke_preserve t = t.stroke_preserve()
 let fill t = t.fill()
 let fill_preserve t = t.fill_preserve()
+let stroke_path_preserve t p = t.stroke_path_preserve p
+let fill_path_preserve t p = t.fill_path_preserve p
+let show t = t.show()
 let clip_rectangle t = t.clip_rectangle
 let save t = t.save()
 let restore t = t.restore()
@@ -286,6 +298,7 @@ let select_font_face t = t.select_font_face
 let set_font_size t = t.set_font_size
 let text_extents t = t.text_extents
 let show_text t = t.show_text
+
 
 type error =
   | Corrupted_dependency of string
@@ -301,13 +314,6 @@ exception Error of error * string
 
 let registered () = M.fold (fun name _ l -> name :: l) !registry []
 
-open String_utils
-
-(* Split the backend from its option list. Backend name is put in
-   lowercase letters.*)
-let backend_options b =
-  let s,l = first_and_list b in
-  String.lowercase s, l
 
 (* Return a fully qualified path to the [fname] or raise [Not_found]. *)
 let rec find_file dirs fname =
@@ -338,7 +344,9 @@ let get_dependencies dirs basename =
 let loaded_dependencies = ref []
 
 let make ?(dirs=[Conf.plugins_dir; Conf.datadir]) b width height =
-  let backend, options = backend_options b in
+  let backend, options = match b with
+    | [] -> "graphics", ["hold"]
+    | b :: o -> String.lowercase b, o in
   let make =
     try M.find backend !registry (* backend already loaded *)
     with Not_found ->
@@ -388,7 +396,7 @@ let available ~dirs =
     try
       let files = Sys.readdir d in
       Array.fold_left begin fun bk fname ->
-        if start_with fname "archimedes_"
+        if String_utils.start_with fname "archimedes_"
           && Filename.check_suffix fname ext then
             let fname = Filename.chop_suffix fname ext in
             String.sub fname 11 (String.length fname - 11) :: bk

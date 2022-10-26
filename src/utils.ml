@@ -1,4 +1,4 @@
-(* File: archimedes.ml
+(* File: utils.ml
 
    Copyright (C) 2011
 
@@ -15,25 +15,6 @@
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the file
    LICENSE for more details. *)
 
-open Printf
-include Archimedes_internals
-
-let init = Viewport.init
-
-let close = Viewport.close
-
-let check_suffixes fname s1 s2 =
-  Filename.check_suffix fname s1 || Filename.check_suffix fname s2
-
-let backend_of_filename fname =
-  if check_suffixes fname ".png" ".PNG" then
-    ["cairo"; "PNG"; fname]
-  else if check_suffixes fname ".pdf" ".PDF" then
-    ["cairo"; "PDF"; fname]
-  else if check_suffixes fname ".ps" ".PS" then
-    ["cairo"; "PS"; fname]
-  else if check_suffixes fname ".tex" ".TEX" then
-    ["tikz"; fname]
-  else ["graphics"; "hold"]
-
-let fx = Plot.Function.x
+let is_nan (x: float) = x <> x
+let is_inf y = 1. /. y = 0.
+let is_finite x = neg_infinity < x && x < infinity

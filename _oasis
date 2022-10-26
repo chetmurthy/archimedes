@@ -1,7 +1,7 @@
 #								-*-conf-*-
 OASISFormat: 0.2
 Name:        archimedes
-Version:     0.3.2
+Version:     0.3.3
 Synopsis:    Extensible 2D plotting library.
 Description: Archimedes is a high quality, platform-independent,
   extensible 2D plotting library.  It provides dynamically loaded
@@ -36,11 +36,14 @@ Flag tikz
 Library "archimedes"
   Path:         src
   BuildTools:   ocamlbuild
-  #Pack:	true
-  # src/archimedes_impl.mlpack and _tags contain the list of modules;
-  # Archimedes re-exports some functions as toplevel ones.
+  # src/archimedes_internals.mlpack and _tags contain the list of
+  # modules.  The "internal" functions are potentially useful to
+  # backends; using Archimedes_internals.cmi (not installed) a backend
+  # using these functions can be compiled -- it can be installed
+  # without the cmi needing to be.  Archimedes re-exports some
+  # functions as toplevel ones.
   Modules:      Archimedes
-  InternalModules: Archimedes_impl
+  InternalModules: Archimedes_internals
   BuildDepends: dynlink, bigarray
 
 Library "archimedes_graphics"
@@ -93,6 +96,16 @@ Executable "Tests"
   Path:         tests
   BuildTools:   ocamlbuild
   MainIs:       tests.ml
+  BuildDepends: archimedes
+  Install:      false
+
+# Examples
+######################################################################
+
+Executable "pythagoras_tree"
+  Path:	        examples/
+  BuildTools:   ocamlbuild
+  MainIs:       pythagoras_tree.ml
   BuildDepends: archimedes
   Install:      false
 

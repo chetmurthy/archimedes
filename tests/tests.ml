@@ -6,25 +6,25 @@ let alltests = [ ("Arrays", Arrays.description, Arrays.draw);
   ("Backend_line", Backend_line.description, Backend_line.draw);
   ("Backend_path", Backend_path.description, Backend_path.draw);
   ("Backend_text", Backend_text.description, Backend_text.draw);
+  ("Boxes", Boxes.description, Boxes.draw);
   ("Demo_zoom", Demo_zoom.description, Demo_zoom.draw);
+  ("Layout", Layout.description, Layout.draw);
+  ("Layout2", Layout2.description, Layout2.draw);
+  ("Layout_borders", Layout_borders.description, Layout_borders.draw);
+  ("Layout_custom", Layout_custom.description, Layout_custom.draw);
   ("Layout_sync", Layout_sync.description, Layout_sync.draw);
   ("Marks", Marks.description, Marks.draw);
-  ("Simple_plot", Simple_plot.description, Simple_plot.draw);
+  ("Piecharts", Piecharts.description, Piecharts.draw);
+  ("Plot_fill", Plot_fill.description, Plot_fill.draw);
+  ("Plot_partial", Plot_partial.description, Plot_partial.draw);
+  ("Plot_sampler", Plot_sampler.description, Plot_sampler.draw);
   ("Test_arrows", Test_arrows.description, Test_arrows.draw);
   ("Test_arrows2", Test_arrows2.description, Test_arrows2.draw);
   ("Test_axes", Test_axes.description, Test_axes.draw);
   ("Test_box", Test_box.description, Test_box.draw);
-  ("Test_boxes", Test_boxes.description, Test_boxes.draw);
   ("Test_clip", Test_clip.description, Test_clip.draw);
   ("Test_cross", Test_cross.description, Test_cross.draw);
-  ("Test_custom_layout", Test_custom_layout.description, Test_custom_layout.draw);
-  ("Test_layout", Test_layout.description, Test_layout.draw);
-  ("Test_layout2", Test_layout2.description, Test_layout2.draw);
-  ("Test_layout_borders", Test_layout_borders.description, Test_layout_borders.draw);
   ("Test_ortho_axes", Test_ortho_axes.description, Test_ortho_axes.draw);
-  ("Test_piecharts", Test_piecharts.description, Test_piecharts.draw);
-  ("Test_plot", Test_plot.description, Test_plot.draw);
-  ("Test_plot_partial", Test_plot_partial.description, Test_plot_partial.draw);
   ("Test_stack", Test_stack.description, Test_stack.draw);
   ("Test_two_viewports", Test_two_viewports.description, Test_two_viewports.draw);
   ("Test_xy_param", Test_xy_param.description, Test_xy_param.draw);
@@ -35,11 +35,11 @@ let alltests = [ ("Arrays", Arrays.description, Arrays.draw);
 
 let backends = ref []
 let cairo out ext () =
-  backends := (fun fname -> sprintf "cairo %s %s.%s" out fname ext) :: !backends
+  backends := (fun fname -> ["cairo"; out; sprintf "%s.%s" fname ext]) :: !backends
 let tikz () =
-  backends := (fun fname -> sprintf "tikz %s.tex" fname) :: !backends
+  backends := (fun fname -> ["tikz"; sprintf "%s.tex" fname]) :: !backends
 let graphics () =
-  backends := (fun _ -> "graphics hold") :: !backends
+  backends := (fun _ -> ["graphics"; "hold"]) :: !backends
 
 let list_tests () =
   List.iter (fun (name,_,_) -> Format.printf "%s@ " name) alltests;
@@ -70,9 +70,16 @@ let tests =
   )
 
 let () =
+  let fail_exn = ref 0 in
   List.iter (fun (name, description, test) ->
     List.iter (fun b ->
       Format.printf "@[<2>%s@;- %s@]@." name description;
-      test(b name)
+      try test(b name)
+      with e ->
+        incr fail_exn;
+        Format.printf "  %s@." (Printexc.to_string e)
     ) !backends
-  ) tests
+  ) tests;
+  if !fail_exn > 0 then
+    printf "WARNING: %i test%s failed with an exception.\n"
+      !fail_exn (if !fail_exn > 1 then "s" else "")
