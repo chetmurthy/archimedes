@@ -1,7 +1,7 @@
 
 (** A 2D plotting library with various backends.
 
-    @version 0.4.4
+    @version 0.4.7
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke
@@ -449,7 +449,9 @@ sig
       one) with the line formed by joining the points [x.(i), y.(i)],
       [i=i0,...,i1] (with possibly [i0 > i1] to indicate that the
       indices must be followed in decreasing order).  Points with at
-      least one NaN or infinite coordinate are skipped.
+      least one NaN or infinite coordinate are skipped when they are at
+      the beginning or the end and result in a {!move_to} when
+      separating finite points.
 
       @param const_x by setting it to [true], you indicate that you will
       not modify [x] (so it will not be copied).  Default: false.
@@ -1140,7 +1142,12 @@ sig
       @param pos the position of the text [s] w.r.t. the position
       [(x,y)].  Default: centering both horizontally and vertically. *)
 
+
   val mark : t -> x:float -> y:float -> string -> unit
+  (** [mark vp x y m] draw the mark given by [m] on the viewport [vp] at
+      position [(x,y)] if both [x] and [y] are finite.  Otherwise, does
+      nothing. *)
+
 
   val axes_ratio : t -> float -> unit
   (** [axes_ratio vp ratio] forces axes to keep [ratio] ([w / h]). *)
@@ -1210,9 +1217,10 @@ module Sampler :
 sig
 
   type strategy = float -> float -> float
-  (** A strategy is a function [f t1 t2] that returns an internal
-      point tm between t1 and t2 which will be used to decide if we
-      need to increment precision or not. *)
+  (** A strategy is a function [f t1 t2] that returns an internal point
+      tm between [t1] and [t2] which will be used to decide if we need
+      to increment precision or not.  The given [t1] and [t2] will
+      always be finite. *)
 
   type cost = Matrix.rectangle ->
     float -> float -> float -> float -> float -> float -> float
@@ -1225,14 +1233,15 @@ sig
 
   val xy : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
     (float -> float * float) -> float -> float -> float array * float array
-  (** [create f t1 t2] samples the parametric function [f] from [t1] to
-      [t2] returning a list of the points in the sample.
+  (** [xy f t1 t2] samples the parametric function [f] on the
+      interval going from [t1] to [t2].  Returns a list of the points in
+      the sample.
 
       @param tlog do we need to step in a logarithmic way ?
 
       @param min_step don't increment precision more than this threshold
 
-      @param n is a maximum number of evaluation of [f] we allow.
+      @param n is a maximum number of evaluations of [f] that are allowed.
       Default: [100].
       @param strategy a customized strategy.
       @param cost a customized cost.
@@ -1240,7 +1249,8 @@ sig
 
   val x : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
     (float -> float) -> float -> float -> float array * float array
-
+  (** [x f x1 x2] same as {!Sampler.xy} but for the scalar function [f]
+      on the interval going from [x1] to [x2]. *)
 
   val strategy_midpoint : strategy
   (** The default strategy: choose the middle point *)
@@ -1274,7 +1284,7 @@ end
 
 
 (** Module handling point styles and marks. *)
-module Pointstyle :
+module Marker :
 sig
 
   exception Error of string
@@ -1538,9 +1548,9 @@ val yrange : Viewport.t -> float -> float -> unit
     subset of these style that make sense for them.
 
     - [`Lines] Data points are joined by a simple line.
-    - [`Points] Data points are marked with the mark type given in
+    - [`Markers] Data points are marked with the mark type given in
     argument of the Points constructor.
-    - [`Linespoints] Data points are joined by a line and marked with
+    - [`Linesmarkers] Data points are joined by a line and marked with
     the mark type given in argument.
     - [`Impulses] Data points are "hit" by lines starting from zero.
     - [`Bars w] Data points determine the height of a box of width [w]
@@ -1548,14 +1558,14 @@ val yrange : Viewport.t -> float -> float -> unit
     - [`HBars h] Data points determine the width of an horizontal box
     of height [h] which must be given in [Data] coordinates (from 0 to 1).
 
-    For the list of default marks for [`Points] and [`Linespoints]
-    have a look to {!Pointstyle.names}.  You can also define your own
-    with {!Pointstyle.add}.
+    For the list of default marks for [`Markers] and [`Linesmarkers]
+    have a look to {!Marker.names}.  You can also define your own
+    with {!Marker.add}.
 *)
 type style =
 [ `Lines
-| `Points of string
-| `Linespoints of string
+| `Markers of string
+| `Linesmarkers of string
 | `Impulses
 | `Bars of float
 | `HBars of float ]
@@ -1563,7 +1573,7 @@ type style =
 (** Plotting functions. *)
 val fx : Viewport.t -> ?tlog:bool -> ?n:int ->
   ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
-  ?style:[`Lines | `Linespoints of string | `Points of string ] ->
+  ?style:[`Lines | `Linesmarkers of string | `Markers of string ] ->
   ?base:(float -> float) -> ?fill:bool -> ?fillcolor:Color.t ->
   (float -> float) -> float -> float -> unit
 (** [fx vp f a b] draws the graph of the function [f] on the interval
@@ -1582,7 +1592,7 @@ val fx : Viewport.t -> ?tlog:bool -> ?n:int ->
 
 val xyf : Viewport.t -> ?tlog:bool -> ?n:int ->
   ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
-  ?style:[`Lines | `Linespoints of string | `Points of string ] ->
+  ?style:[`Lines | `Linesmarkers of string | `Markers of string ] ->
   ?fill:bool -> ?fillcolor:Color.t ->
   (float -> float * float) -> float -> float -> unit
 (** [xyf vp f a b] draws the image of the function [f] on the interval
@@ -1599,7 +1609,7 @@ module Array : sig
   (** [y vp yvec] draws the set of points [(i, yvec.(i))].
 
       @param style the style used for the plot.  The default style is
-      [`Points "O"] which means data points are marked by a small disk.
+      [`Marker "O"] which means data points are marked by a small disk.
       See {!Archimedes.style} for a full list.
 
       @param fill whether to fill the surface between the base and the
@@ -1608,8 +1618,8 @@ module Array : sig
       @param const_y whether the input vector [yvec] will not be modified
       anymore (so there is no need to cache its current values).
 
-      @param base for the styles [`Lines], [`Points], and
-      [`Linespoints], it gives the bottom of the filling zone.  For
+      @param base for the styles [`Lines], [`Markers], and
+      [`Linesmarkers], it gives the bottom of the filling zone.  For
       the styles [`Impulses] and [`Bars w], it is the Y value above
       which the boxes (of heights given by [yvec]) are drawn.  For the
       style [`HBars], it is the (signed) distance to the Y axis at
@@ -1627,7 +1637,7 @@ module Array : sig
       See {!Array.y} for the meaning of optional arguments. *)
 
   val xy_pairs: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    ?style:[`Lines | `Markers of string | `Linesmarkers of string ] ->
     (float * float) array -> unit
   (** See {!Array.xy}.  The only difference is that this function
       takes an array of couples (x,y) instead of two arrays, one for x
@@ -1664,13 +1674,13 @@ module List : sig
   (** See {!Array.y}.  *)
 
   val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    ?style:[`Lines | `Markers of string | `Linesmarkers of string ] ->
     float list -> float list -> unit
   (** See {!Array.xy}.  The number of elements plotted the the minimum
       of the lengths of the two lists. *)
 
   val xy_pairs: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    ?style:[`Lines | `Markers of string | `Linesmarkers of string ] ->
     (float * float) list -> unit
   (** See {!Array.xy_pairs}.  *)
 end
@@ -1726,7 +1736,7 @@ val y : Viewport.t -> ?base:((float -> unit) -> unit) ->
     See {!Array.y} for more information. *)
 
 val xy : Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    ?style:[`Lines | `Markers of string | `Linesmarkers of string ] ->
   ((float -> float -> unit) -> unit) -> unit
 (** [xy vp iter] plots on [vp] the values provided by the iterator
     [iter].

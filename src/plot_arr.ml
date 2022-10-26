@@ -26,35 +26,43 @@ let index_array n =
     m
   )
 
-(* Plotting functions
+(* Functions to plot arrays
  ***********************************************************************)
 
 (* ASSUME n > 0. *)
 let lines_y vp ~fill ?(const_base=false) ?base ~fillcolor
     ?(const_x=false) (x: t) ?(const_y=false) (y: t) n =
-  let path = Path.make() in
   let x = if const_x then x else COPY(x)
   and y = if const_y then y else COPY(y) in
-  LINE_OF_ARRAY(path, x, y, FIRST, LAST(n));
+  let fill_subpath =
+    if fill then
+      (match base with
+      | None ->
+        (fun sub_path i0 i1 ->
+          Printf.printf "%i %i\n%!" i0 i1;
+          Path.line_to sub_path (float i1) 0.;
+          Path.line_to sub_path (float i0) 0.;
+          Path.close sub_path;
+          let color = V.get_color vp in
+          V.set_color vp fillcolor;
+          V.fill ~path:sub_path vp `Data ~fit:false;
+          V.set_color vp color;
+        )
+      | Some b ->
+        let b = if const_base then b else COPY(b) in
+        if DIM(b) <> n then invalid_arg(MOD ^ ".y: wrong length for \"base\"");
+        (fun sub_path i0 i1 ->
+          LINE_OF_ARRAY(sub_path, x, b, i1, i0);
+          let color = V.get_color vp in
+          V.set_color vp fillcolor;
+          V.fill ~path:sub_path vp `Data ~fit:false;
+          V.set_color vp color;
+        );
+      )
+    else do_nothing in
+  let path = Path.make() in
+  SUBPATH_LINE_OF_ARRAY(path, x, y, FIRST, LAST(n), fill_subpath);
   V.fit vp (Path.extents path);
-  if fill then (
-    let path_fill = Path.copy path in
-    (match base with
-    | None ->
-      Path.line_to path_fill (float(LAST(n))) 0.;
-      Path.line_to path_fill (float FIRST) 0.
-    | Some b ->
-      let b = if const_base then b else COPY(b) in
-      if DIM(b) <> n then invalid_arg(MOD ^ ".y: wrong length for \"base\"");
-      LINE_OF_ARRAY(path_fill, x, b, LAST(n), FIRST);
-      V.fit vp (Path.extents path_fill); (* update for base *)
-    );
-    Path.close path_fill;
-    let color = V.get_color vp in
-    V.set_color vp fillcolor;
-    V.fill ~path:path_fill vp `Data ~fit:false;
-    V.set_color vp color;
-  );
   path
 
 let fill_and_stroke vp path ~fill ~fillcolor =
@@ -72,6 +80,7 @@ let bars vp ~fill ?base ~fillcolor (x:t) (y:t) n w =
   (match base with
   | None ->
     for i = FIRST to LAST(n) do
+      (* Does nothing if its arguments are not finite: *)
       Path.rectangle path ~x:(GET(x,i) -. w *. 0.5) ~y:0. ~w ~h:(GET(y,i))
     done
   | Some b ->
@@ -92,6 +101,7 @@ let horizontal_bars vp ~fill ?base ~fillcolor (x:t) (y:t) n w =
   (match base with
   | None ->
     for i = FIRST to LAST(n) do
+      (* Does nothing if its arguments are not finite: *)
       Path.rectangle path ~x:0. ~y:(GET(y,i) -. w *. 0.5) ~w:(GET(x,i)) ~h:w
     done
   | Some b ->
@@ -110,25 +120,26 @@ let horizontal_bars vp ~fill ?base ~fillcolor (x:t) (y:t) n w =
 let draw_marks vp style (x: t) (y: t) n =
   match style with
   | `Lines | `Impulses | `Bars _ | `HBars _ -> ()
-  | `Points m | `Linespoints m ->
+  | `Markers m | `Linesmarkers m ->
     for i = FIRST to LAST(n) do
+      (* Does nothing if its args are not finite: *)
       V.mark vp (GET(x,i)) (GET(y,i)) m
     done
 
 (* ASSUME n > 0. *)
 let unsafe_y vp ?const_base ?base ?(fill=false) ?(fillcolor=default_fillcolor)
-    ?(style=`Points "O") ?const_x x ?const_y y n =
+    ?(style=`Markers "O") ?const_x x ?const_y y n =
   match style with
   | `Lines ->
     let path =
       lines_y vp ~fill ?const_base ?base ~fillcolor ?const_x x ?const_y y n
     in
     V.stroke ~path vp `Data ~fit:false
-  | `Points mark ->
+  | `Markers mark ->
     ignore(lines_y vp ~fill
              ?const_base ?base ~fillcolor ?const_x x ?const_y y n);
     draw_marks vp style x y n
-  | `Linespoints mark ->
+  | `Linesmarkers mark ->
     let path =
       lines_y vp ~fill ?const_base ?base ~fillcolor ?const_x x ?const_y y n
     in
@@ -200,15 +211,15 @@ let lines_xy vp ~fill ~fillcolor
 
 (* ASSUME n > 0 *)
 let unsafe_xy vp ?(fill=false) ?(fillcolor=default_fillcolor)
-    ?(style=`Points "O") ?const_x (x:t) ?const_y (y:t) n =
+    ?(style=`Markers "O") ?const_x (x:t) ?const_y (y:t) n =
   match style with
   | `Lines ->
     let path = lines_xy vp ~fill ~fillcolor ?const_x x ?const_y y n in
     V.stroke ~path vp `Data ~fit:false
-  | `Points mark ->
+  | `Markers mark ->
     ignore(lines_xy vp ~fill ~fillcolor ?const_x x ?const_y y n);
     draw_marks vp style x y n
-  | `Linespoints mark ->
+  | `Linesmarkers mark ->
     let path = lines_xy vp ~fill ~fillcolor ?const_x x ?const_y y n in
     V.stroke vp ~path `Data ~fit:false;
     draw_marks vp style x y n

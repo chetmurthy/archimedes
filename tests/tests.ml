@@ -21,7 +21,7 @@ let alltests = [ ("Arrows1", Arrows1.description, Arrows1.draw);
   ("Layout_custom", Layout_custom.description, Layout_custom.draw);
   ("Layout_grid", Layout_grid.description, Layout_grid.draw);
   ("Layout_sync", Layout_sync.description, Layout_sync.draw);
-  ("Marks", Marks.description, Marks.draw);
+  ("Markers", Markers.description, Markers.draw);
   ("Piecharts", Piecharts.description, Piecharts.draw);
   ("Plot_array", Plot_array.description, Plot_array.draw);
   ("Plot_fill", Plot_fill.description, Plot_fill.draw);

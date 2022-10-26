@@ -3,7 +3,7 @@
    Copyright (C) 2009-2015
 
      Christophe Troestler <Christophe.Troestler@umons.ac.be>
-     Pierre Hauweele <antegallya@gmail.com>
+     Pierre Hauweele <pierre@hauweele.net>
      Noemie Meunier <noemie_6462@hotmail.com>
      Fabian Pijcke <fabian.pijcke@gmail.com>
      WWW: http://math.umons.ac.be/an/software/
@@ -24,12 +24,9 @@ open Bigarray
 type vec = (float, float64_elt, fortran_layout) Array1.t
 type cvec = (float, float64_elt, c_layout) Array1.t
 
-let fourth_pi = atan 1.
-
 (* Helper functions
  ***********************************************************************)
 
-let is_infinite x = 1. /. x = 0.
 let min a b = if (a:float) < b then a else b (* assume no NaN *)
 let max a b = if (a:float) > b then a else b
 
@@ -171,6 +168,8 @@ let clear p =
 let current_point p =
   if p.curr_pt then p.x, p.y
   else failwith "Archimedes.Path.current_point"
+
+let subpath_x p = p.sub_x
 
 (* Compute extents
  ***********************************************************************)
@@ -343,12 +342,15 @@ module CVec = struct
 end
 
 let unsafe_line_of_array = FloatArray.unsafe_line_to
+let unsafe_subpath_line_of_array = FloatArray.unsafe_subpath_line_to
 let line_of_array = FloatArray.line_to
 
 let unsafe_line_of_vec = Vec.unsafe_line_to
+let unsafe_subpath_line_of_vec = Vec.unsafe_subpath_line_to
 let line_of_vec = Vec.line_to
 
 let unsafe_line_of_cvec = CVec.unsafe_line_to
+let unsafe_subpath_line_of_cvec = CVec.unsafe_subpath_line_to
 let line_of_cvec = CVec.line_to
 
 

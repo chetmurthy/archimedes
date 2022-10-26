@@ -1,5 +1,7 @@
-include Tests_common
+open Tests_common
 module A = Archimedes
+
+let description = "Functions plotted on a range where they are not defined."
 
 let draw bk =
   let vp = A.init ~w ~h ~dirs bk in
@@ -10,5 +12,8 @@ let draw bk =
      point. This will be fixed with the new functions fill implementation
      (WIP). *)
   A.Viewport.set_color vp A.Color.royal_blue;
-  A.fx vp sqrt (-10.) 10. ~style:(`Linespoints "S");
+  A.fx vp sqrt (-10.) 10. ~style:(`Linesmarkers "S");
+  A.Viewport.set_color vp A.Color.indian_red;
+  A.fx vp (fun x -> 0.3 *. sqrt(x *. x -. 4.)) (-10.) 10.
+  ~style:(`Linesmarkers "o") ~fill:true;
   A.close vp

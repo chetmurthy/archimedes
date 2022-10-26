@@ -3,7 +3,7 @@
    Copyright (C) 2009-2015
 
      Christophe Troestler <Christophe.Troestler@umons.ac.be>
-     Pierre Hauweele <antegallya@gmail.com>
+     Pierre Hauweele <pierre@hauweele.net>
      Noemie Meunier <noemie_6462@hotmail.com>
      Fabian Pijcke <fabian.pijcke@gmail.com>
      WWW: http://math.umons.ac.be/an/software/
@@ -70,7 +70,9 @@ val line_of_array: t -> ?i0:int -> ?i1:int ->
     one) with the line formed by joining the points [x.(i), y.(i)],
     [i=i0,...,i1] (with possibly [i0 > i1] to indicate that the
     indices must be followed in decreasing order).  Points with at
-    least one NaN or infinite coordinate are skipped.
+    least one NaN or infinite coordinate are skipped when they are at
+    the beginning or the end and result in a {!move_to} when
+    separating finite points.
 
     @param const_x by setting it to [true], you indicate that you will
     not modify [x] (so it will not be copied).  Default: false.
@@ -154,6 +156,9 @@ type data = private
   | Fortran of vec * vec * int * int
   | C of cvec * cvec * int * int
 
+val subpath_x : t -> float
+(** Beginning of the current subpath (if the path is non empty which
+    is not checked). *)
 
 val iter : t ->  (data -> unit) -> unit
 (** [iter p f] iterates [f] on all components of the path [p]. *)
@@ -164,18 +169,31 @@ val fprint: out_channel -> ?update_extents:bool -> t -> unit
 val unsafe_line_of_array : t -> float array -> float array -> int -> int -> unit
 (** [unsafe_line_of_array vp x y i0 i1]: same as {!line_of_array}
     except that the arrays are ASSUMED to be of the same length, the
-    indices valid, that all elements [x.(i)] and [y.(i)] for [i =
-    i0,...,i1] are finite, and the arrays are NOT copied. *)
+    indices valid, and the arrays are NOT copied.  The presence of
+    points that are not-finite is checked. *)
+
+val unsafe_subpath_line_of_array :
+  t -> float array -> float array -> int -> int -> (t -> int -> int -> unit) -> unit
+(** [unsafe_subpath_line_of_array vp x y i0 i1 f] does the same as
+    {!unsafe_line_of_array} except that [f subpath j0 j1] is called on
+    each subpath (each contiguous set of indices [j0]..[j1] in the
+    range [i0]..[i1] delimited by non-finite points). *)
 
 val unsafe_line_of_vec: t -> vec -> vec -> int -> int -> unit
 (** Same as {!line_of_vec} except that the arrays are ASSUMED to be of
-    the same length, the indices valid, all points in the range are
-    finite, and the arrays are NOT copied. *)
+    the same length, the indices valid, and the arrays are NOT copied. *)
+
+val unsafe_subpath_line_of_vec: t -> vec -> vec -> int -> int ->
+  (t -> int -> int -> unit) -> unit
+(** See {!unsafe_subpath_line_of_array}. *)
 
 val unsafe_line_of_cvec: t -> cvec -> cvec -> int -> int -> unit
 (** Same as {!line_of_cvec} except that the arrays are ASSUMED to be
-    of the same length, the indices valid, all points in the range are
-    finite, and the arrays are NOT copied. *)
+    of the same length, the indices valid, and the arrays are NOT copied. *)
+
+val unsafe_subpath_line_of_cvec:
+  t -> cvec -> cvec -> int -> int -> (t -> int -> int -> unit) -> unit
+(** See {!unsafe_subpath_line_of_array}. *)
 
 val bezier_of_arc : 'a ->
   ('a -> x0:float -> y0:float -> x1:float -> y1:float -> x2:float -> y2:float ->
