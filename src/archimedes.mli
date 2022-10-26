@@ -1,7 +1,7 @@
 
 (** A 2D plotting library with various backends.
 
-    @version 0.3.3
+    @version 0.4
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke
@@ -203,6 +203,11 @@ sig
 
   val get_rgba : t -> float * float * float * float
   (** Equivalent to ([r t],[g t],[b t], [a t]).*)
+
+  val luminance : t -> float
+  (** @returns the luminance of the color.  See
+      e.g. {{:http://en.wikipedia.org/wiki/Luminance_%28relative%29}Wikipedia}.
+  *)
 
   (** {3 Predefined colors} *)
 
@@ -577,6 +582,16 @@ sig
     val fill_path_preserve : t -> Path.t -> unit
     (** [fill_path_preserve] is similar to [stroke_path_preserve] except
         that it fills the path. *)
+
+    val fill_with_color : t -> Color.t -> unit
+    (** [fill_with_color t c] fill the current path of [t] with the
+        color [c].  Even if the color is transparent, it must {b
+        replace} all underlying elements (contrarily to {!Backend.fill}
+        which will show the underlying elements through a transparent
+        color).  If transparency is not supported by the backend, it
+        does the same as {!Backend.fill}, except that this operation
+        does not change the current color of the backend.  It may modify
+        the current path however. *)
 
     val show : t -> unit
     (** Some backends may not show immediately the action of {!stroke},
@@ -1314,7 +1329,10 @@ sig
     ?major:(string * float) -> ?minor:(string * float) ->
     ?start:Arrows.style -> ?stop:Arrows.style ->
     ?tics:Tics.t -> ?offset:offset -> Viewport.t -> unit
-  (** [add_x_axis vp] adds an x-axis to the viewport [vp].
+  (** [x vp] adds an x-axis to the viewport [vp].
+
+      @param major is a couple [(mark, size)] drawn at each major tic
+      position.
 
       @param start the arrow ending style on the left (x0) (see the
       Arrows module)
@@ -1330,7 +1348,7 @@ sig
     ?major:(string * float) -> ?minor:(string * float) ->
     ?start:Arrows.style -> ?stop:Arrows.style ->
     ?tics:Tics.t -> ?offset:offset -> Viewport.t -> unit
-  (** [add_y_axis vp] adds an y-axis to the viewport [vp].
+  (** [y vp] adds an y-axis to the viewport [vp].
 
       @param start the arrow ending style on the bottom (y0) (see the
       Arrows module)
@@ -1343,7 +1361,7 @@ sig
       @param offset where to place the axis (x-coordinate) *)
 
   val box : ?grid:bool -> ?tics:Tics.t -> ?tics_alt:Tics.t -> Viewport.t -> unit
-  (** [box vp] A default axes system consisting of four axes, one at
+  (** [box vp] A default system of axes consisting of four axes, one on
       each border of the viewport [vp], resulting in a box surrounding
       the viewport.
 
@@ -1364,6 +1382,7 @@ end
 (** {3 Initializing Archimedes} *)
 
 val init : ?lines:float -> ?text:float -> ?marks:float ->
+  ?bg:Color.t ->
   ?w:float -> ?h:float -> ?dirs:string list -> string list -> Viewport.t
 (** [init backend] initializes Archimedes and returns the main viewport
     using the backend specified.  The first element of [backend] is
@@ -1373,6 +1392,12 @@ val init : ?lines:float -> ?text:float -> ?marks:float ->
     backend, using a PNG surface to be saved to [filename].  The empty
     list selects ["Graphics"; "hold"].
 
+    @param w the width of the main viewport (in backend's unit).
+
+    @param h the height of the main viewport (in backend's unit).
+
+    @param bg the color of the background.  Default: {!Color.white}.
+
     @param lines the width of the lines.  Default: [1.] which
     corresponds to a line width on the backend of [min w h /. 500.].
 
@@ -1381,10 +1406,6 @@ val init : ?lines:float -> ?text:float -> ?marks:float ->
 
     @param marks the size of the marks.  Default: [7.] which
     corresponds packing about 100 marks in [min w h].
-
-    @param w the width of the main viewport (in backend's unit)
-
-    @param h the height of the main viewport (in backend's unit)
 
     @param dirs a list of directories where Archimedes looks for
     libraries (cma or cmxs) for dynamically loaded backends.  The
@@ -1400,6 +1421,10 @@ val backend_of_filename : string -> string list
 val close : Viewport.t -> unit
 
 val set_color : Viewport.t -> Color.t -> unit
+(** Alias for {!Viewport.set_color}. *)
+
+val set_line_width : Viewport.t -> float -> unit
+(** Alias for {!Viewport.set_line_width}. *)
 
 (** {3 Plotting various datatypes} *)
 
@@ -1483,6 +1508,11 @@ module Array : sig
       @raise Invalid_argument if [xvec] and [yvec] do not have the same
       length.*)
 
+  val xy_pairs: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    (float * float) array -> unit
+  (** See {!Array.xy_pairs}. *)
+
   val stack : Viewport.t -> ?colors:Color.t array ->
     ?fill:bool -> ?fillcolors:Color.t array -> ?style:style ->
     float array array -> unit
@@ -1496,8 +1526,14 @@ module List : sig
 
   val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
     ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    float list -> float list -> unit
+  (** See {!Array.xy}.  The number of elements plotted the the minimum
+      of the lengths of the two lists. *)
+
+  val xy_pairs: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
     (float * float) list -> unit
-  (** See {!Array.xy}.  *)
+  (** See {!Array.xy_pairs}.  *)
 end
 
 (** Plotting Fortran bigarrays. *)
@@ -1521,6 +1557,7 @@ module Vec : sig
   (** See {!Array.stack}.  *)
 end
 
+(** Plotting C bigarrays. *)
 module CVec : sig
   open Bigarray
   type t = (float, float64_elt, c_layout) Array1.t

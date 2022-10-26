@@ -29,6 +29,7 @@ let index_array n =
 (* Plotting functions
  ***********************************************************************)
 
+(* ASSUME n > 0. *)
 let lines_y vp ~fill ?base ~fillcolor (x: t) (y: t) n =
   let path = Path.make() in
   LINE_OF_ARRAY(path, x, y, FIRST, LAST(n));
@@ -66,15 +67,18 @@ let boxes vp ~fill ?base ~fillcolor (x:t) (y:t) n w =
       Path.rectangle path
         ~x:(GET(x,i) -. w *. 0.5) ~y:(GET(b,i)) ~w ~h:(GET(y,i))
     done);
-    (* For boxes, one certainly wants to see everything *)
-  V.fit vp (Path.extents path);
+  (* For boxes, one certainly wants to see everything.  Moreover some
+     space to the left and to the right are nice to have. *)
+  let e = Path.extents path in
+  V.fit vp { e with Matrix.x = e.Matrix.x -. 0.2 *. w;
+                    w = e.Matrix.w +. 0.4 *. w};
   if fill then (
     let color = V.get_color vp in
     V.set_color vp fillcolor;
     V.fill ~path vp V.Data ~fit:false;
     V.set_color vp color;
   );
-    (* Draw (for boxes, marks do not make any sense). *)
+  (* Draw (for boxes, marks do not make any sense). *)
   V.stroke ~path vp V.Data
 
 let draw_marks vp style (x: t) (y: t) n =
@@ -85,6 +89,7 @@ let draw_marks vp style (x: t) (y: t) n =
       V.mark vp (GET(x,i)) (GET(y,i)) m
     done
 
+(* ASSUME n > 0. *)
 let unsafe_y vp ?base ?(fill=false) ?(fillcolor=default_fillcolor)
     ?(style=`Points "O") x y n =
   match style with
@@ -104,10 +109,12 @@ let unsafe_y vp ?base ?(fill=false) ?(fillcolor=default_fillcolor)
     boxes vp ~fill ?base ~fillcolor x y n 0.
 
 let y vp ?base ?fill ?fillcolor ?style ?(const=false) ydata =
-  let y = if const then ydata else COPY(ydata) in
-  let n = DIM(y) in
-  let x = index_array n in
-  unsafe_y vp ?base ?fill ?fillcolor ?style x y n
+  let n = DIM(ydata) in
+  if n > 0 then (
+    let y = if const then ydata else COPY(ydata) in
+    let x = index_array n in
+    unsafe_y vp ?base ?fill ?fillcolor ?style x y n
+  )
 
 (* FIXME: better selection of default colors *)
 let default_fillcolors =
@@ -116,7 +123,7 @@ let default_fillcolors =
 
 let stack vp ?colors ?(fill=true) ?(fillcolors=[| |])
     ?(style=`Boxes 0.5) yvecs =
-  if Array.length yvecs > 0 then (
+  if Array.length yvecs > 0 && DIM(yvecs.(0)) > 0 then (
     let fillcolors =
       if Array.length fillcolors = 0 then default_fillcolors
       else fillcolors in
@@ -138,6 +145,7 @@ let stack vp ?colors ?(fill=true) ?(fillcolors=[| |])
     done
   )
 
+(* ASSUME n > 0 *)
 let lines_xy vp ~fill ~fillcolor (x:t) (y:t) n =
   let path = Path.make() in
   LINE_OF_ARRAY(path, x, y, FIRST, LAST(n));
@@ -152,6 +160,7 @@ let lines_xy vp ~fill ~fillcolor (x:t) (y:t) n =
   );
   path
 
+(* ASSUME n > 0 *)
 let unsafe_xy vp ?(fill=false) ?(fillcolor=default_fillcolor)
     ?(style=`Points "O") (x:t) (y:t) n =
   match style with
@@ -171,6 +180,8 @@ let xy vp ?fill ?fillcolor ?style
   let n = DIM(xdata) in
   if n <> DIM(ydata) then
     invalid_arg "Archimedes.Array.xy: arrays do not have the same length";
-  let x = if const_x then xdata else COPY(xdata) in
-  let y = if const_y then ydata else COPY(ydata) in
-  unsafe_xy vp ?fill ?fillcolor ?style x y n
+  if n > 0 then (
+    let x = if const_x then xdata else COPY(xdata) in
+    let y = if const_y then ydata else COPY(ydata) in
+    unsafe_xy vp ?fill ?fillcolor ?style x y n
+  )

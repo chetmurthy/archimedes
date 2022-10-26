@@ -89,8 +89,7 @@ end = struct
   type t = {
     mutable x: axis;
     mutable y: axis;
-    mutable ratio: float option sync
-  }
+    mutable ratio: float option sync  }
 
   let default_sync def_val =
     { value = def_val; vps = [] }
@@ -107,7 +106,7 @@ end = struct
   let default_axes_system () =
     { x = default_axis ();
       y = default_axis ();
-      ratio = default_sync None}
+      ratio = default_sync None }
 
   let fit_range range =
     match range.auto_x0, range.auto_xend with
@@ -172,13 +171,14 @@ and Viewport : sig
   type t = {
     backend: Backend.t;
     parent: t;
+    bg_color: Color.t;  (* background color *)
     mutable children: t list;
     mutable coord_device: Coordinate.t;
     mutable coord_graph: Coordinate.t;
     mutable coord_orthonormal: Coordinate.t;
     mutable coord_data: Coordinate.t;
     mutable square_side: float;
-    path: Path.t;
+    path: Path.t;  (* current path, one per viewport *)
     mutable axes_system: Axes.t;
     mutable xaxis_size: float;
     mutable yaxis_size: float;
@@ -194,8 +194,8 @@ and Viewport : sig
   }
   type coord_name = Device | Graph | Data | Orthonormal
   val get_coord_from_name : t -> coord_name -> Coordinate.t
-  val init : ?lines:float -> ?text:float -> ?marks:float -> ?w:float ->
-    ?h:float -> ?dirs:string list -> string list -> t
+  val init : ?lines:float -> ?text:float -> ?marks:float ->
+    ?bg:Color.t -> ?w:float -> ?h:float -> ?dirs:string list -> string list -> t
   val make : ?lines:float -> ?text:float -> ?marks:float ->
     t -> coord_name -> float -> float -> float -> float ->
     (t -> float -> float -> unit) -> t
@@ -338,6 +338,7 @@ end = struct
   type t = {
     backend: Backend.t;
     parent: t;
+    bg_color: Color.t;  (* background color *)
     mutable children: t list;
 
     (* (A,B,C,E) indicate "1" for a particular (see below) coordinate system
@@ -600,9 +601,8 @@ end = struct
     let ctm = Coordinate.use vp.backend vp.coord_device in
     Backend.save vp.backend;
     Backend.clear_path vp.backend;
-    Backend.set_color vp.backend Color.white;
     Backend.rectangle vp.backend 0. 0. 1. 1.;
-    Backend.fill vp.backend;
+    Backend.fill_with_color vp.backend vp.bg_color;
     Backend.restore vp.backend;
     Coordinate.restore vp.backend ctm
 
@@ -611,7 +611,7 @@ end = struct
   (* Note: if a vp is synchronized with one of its children, this children
      will be redrawn two times. *)
   let rec do_instructions vp =
-    if vp.saves != [] then print_string "Warning: saves list is not empty\n";
+    if vp.saves <> [] then print_string "Warning: saves list is not empty\n";
     blank vp;
     Queue.iter (fun f -> f ()) vp.instructions;
     List.iter do_instructions (List.rev vp.children)
@@ -701,7 +701,7 @@ end = struct
  ***********************************************************************)
 
   let init ?(lines=def_lw) ?(text=def_ts) ?(marks=def_ms)
-      ?(w=640.) ?(h=480.) ?dirs backend_name =
+      ?(bg=Color.white) ?(w=640.) ?(h=480.) ?dirs backend_name =
     let backend = Backend.make ?dirs backend_name w h in
     let coord_root =
       if Backend.flipy backend then
@@ -723,6 +723,7 @@ end = struct
     let rec viewport = {
       backend = backend;
       parent = viewport;
+      bg_color = bg;
       children = [];
       coord_device = coord_device; coord_graph = coord_graph;
       coord_orthonormal =
@@ -787,6 +788,7 @@ end = struct
     let viewport = {
       backend = vp.backend;
       parent = vp;
+      bg_color = vp.bg_color;
       children = [];
       coord_device = coord_device; coord_graph = coord_graph;
       coord_orthonormal =

@@ -21,6 +21,7 @@
 open Printf
 open Bigarray
 module A = Archimedes
+module Matrix = A.Matrix
 module P = Archimedes_internals.Path
 
 let min a b = if (a:float) < b then a else b
@@ -510,6 +511,15 @@ struct
   let fill t =
     fill_preserve t;
     A.Path.clear t.current_path
+
+  let fill_with_color t c =
+    let st = get_state t in
+    let color = st.color in
+    set_color t c;
+    fill_preserve t;  (* no need to do additional work *)
+    (* Restore color *)
+    st.color <- color;
+    Graphics.set_color color
 
   let fill_path_preserve t path =
     let st = get_state t in
