@@ -1,1 +1,1 @@
-$(pkg_cairo2)/cairo2.cma
+$(pkg_cairo2)/cairo.cma
