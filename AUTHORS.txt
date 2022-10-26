@@ -1,13 +1,17 @@
 (* OASIS_START *)
-(* DO NOT EDIT (digest: 742e5adb78141aaff55b55bcdb459ce1) *)
-Authors of archimedes
-Christophe Troestler <Christophe.Troestler@umons.ac.be>
-Pierre Hauweele <pierre@hauweele.net>
-Fabian Pijcke <fabian.pijcke@gmail.com>
-Noémie Meunier <noemie_6462@hotmail.com>
-Bertrand Desmons <bibi-6@hotmail.fr>
-Xavier Deschuyteneer <xavier.deschuyteneer@gmail.com>
+(* DO NOT EDIT (digest: f1b808e80f0380ac502ed622a092977b) *)
 
-Current maintainers of archimedes
-Christophe Troestler <Christophe.Troestler@umons.ac.be>
+Authors of archimedes:
+
+* Christophe Troestler <Christophe.Troestler@umons.ac.be>
+* Pierre Hauweele <pierre@hauweele.net>
+* Fabian Pijcke <fabian.pijcke@gmail.com>
+* Noémie Meunier <noemie_6462@hotmail.com>
+* Bertrand Desmons <bibi-6@hotmail.fr>
+* Xavier Deschuyteneer <xavier.deschuyteneer@gmail.com>
+
+Current maintainers of archimedes:
+
+* Christophe Troestler <Christophe.Troestler@umons.ac.be>
+
 (* OASIS_STOP *)

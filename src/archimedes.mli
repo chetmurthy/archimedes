@@ -811,7 +811,7 @@ sig
 
     val make : options:string list -> float -> float -> t
       (** [create options width height] must creates a new handle of
-          size [width]×[height] (in units proper to the module) on which
+          size [width]Ã—[height] (in units proper to the module) on which
           the subsequent drawing functions operate.  [options] allows to
           pass options to the backend (this is backend specific). *)
 
@@ -1515,16 +1515,17 @@ sig
 
   type t =
   | Fixed of labels * float list
-  (** Not Yet implemented *)
+  (** [Archimedes.Tics.Fixed (label, tics)] draws major tics at values
+      specified by the [tics] list and labels them using [label]. *)
   | Fixed_norm of labels * float list
   (** Not Yet implemented *)
   | Equidistants of labels * float * float * int
-  (** [Archimede.Tics.Equidistants (label, start, step, n)]
+  (** [Archimedes.Tics.Equidistants (label, start, step, n)]
       draws [Major Tics] from [start] equidistants of [step] along the axe
       and with [n] [Minor Tics] between each of them and the labels defined
       with [label] *)
   | Auto of labels
-  (** [Archimede.Tics.Auto label] draws [Major Tics] to fit the axe and the
+  (** [Archimedes.Tics.Auto label] draws [Major Tics] to fit the axe and the
       [label] automaticaly*)
 
 end
