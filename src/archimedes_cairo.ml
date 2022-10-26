@@ -18,11 +18,11 @@
 
 (** Cairo Archimedes plugin *)
 
-open Archimedes
+module A = Archimedes
 open Bigarray
-module M = Matrix
+module M = A.Matrix
 
-module B : Backend.Capabilities =
+module B : A.Backend.Capabilities =
 struct
   include Cairo
 
@@ -33,22 +33,22 @@ struct
   (* Same type (same internal representation), just in different modules *)
   let set_line_cap t c =
     set_line_cap t (match c with
-                    | Backend.BUTT -> Cairo.BUTT
-                    | Backend.ROUND -> Cairo.ROUND
-                    | Backend.SQUARE -> Cairo.SQUARE)
+                    | A.Backend.BUTT -> Cairo.BUTT
+                    | A.Backend.ROUND -> Cairo.ROUND
+                    | A.Backend.SQUARE -> Cairo.SQUARE)
   let get_line_cap t = (match get_line_cap t with
-                        | Cairo.BUTT -> Backend.BUTT
-                        | Cairo.ROUND -> Backend.ROUND
-                        | Cairo.SQUARE -> Backend.SQUARE)
+                        | Cairo.BUTT -> A.Backend.BUTT
+                        | Cairo.ROUND -> A.Backend.ROUND
+                        | Cairo.SQUARE -> A.Backend.SQUARE)
   let set_line_join t j =
     set_line_join t (match j with
-                     | Backend.JOIN_MITER -> Cairo.JOIN_MITER
-                     | Backend.JOIN_ROUND -> Cairo.JOIN_ROUND
-                     | Backend.JOIN_BEVEL -> Cairo.JOIN_BEVEL)
+                     | A.Backend.JOIN_MITER -> Cairo.JOIN_MITER
+                     | A.Backend.JOIN_ROUND -> Cairo.JOIN_ROUND
+                     | A.Backend.JOIN_BEVEL -> Cairo.JOIN_BEVEL)
   let get_line_join t = (match get_line_join t with
-                         | Cairo.JOIN_MITER -> Backend.JOIN_MITER
-                         | Cairo.JOIN_ROUND -> Backend.JOIN_ROUND
-                         | Cairo.JOIN_BEVEL -> Backend.JOIN_BEVEL)
+                         | Cairo.JOIN_MITER -> A.Backend.JOIN_MITER
+                         | Cairo.JOIN_ROUND -> A.Backend.JOIN_ROUND
+                         | Cairo.JOIN_BEVEL -> A.Backend.JOIN_BEVEL)
 
   let path_extents t =
     (* (Obj.magic(Cairo.Path.extents t): M.rectangle) *)
@@ -76,7 +76,7 @@ struct
   let flipy _ = true
 
   let set_color t c =
-    let r,g,b,a = Color.get_rgba c in
+    let r,g,b,a = A.Color.get_rgba c in
     Cairo.set_source_rgba t r g b a
 
   let arc t ~r ~a1 ~a2 =
@@ -87,20 +87,6 @@ struct
 
   (* identity CTM -- never modified *)
   let id = { Cairo.xx = 1.; xy = 0.;  yx = 0.; yy = 1.;  x0 = 0.; y0 = 0. }
-
-  let stroke t =
-    (* FIXME: Do we really want this? are we not supposed to always
-       draw in a nice coordinate system? *)
-    let m = Cairo.get_matrix t in
-    Cairo.set_matrix t id; (* to avoid the lines being deformed by [m] *)
-    stroke t;
-    Cairo.set_matrix t m
-
-  let stroke_preserve t =
-    Cairo.save t;
-    Cairo.set_matrix t id;
-    stroke_preserve t;
-    Cairo.restore t
 
   let show t =
     Cairo.Surface.flush (get_target t)
@@ -137,39 +123,68 @@ struct
     Surface.finish surface
 
 
+  let stroke cr =
+    (* FIXME: Do we really want this? are we not supposed to always
+       draw in a nice coordinate system? *)
+    let m = Cairo.get_matrix cr in
+    Cairo.set_matrix cr id; (* to avoid the lines being deformed by [m] *)
+    Cairo.stroke cr;
+    Cairo.set_matrix cr m
+
+  let stroke_preserve cr =
+    let m = Cairo.get_matrix cr in
+    Cairo.set_matrix cr id; (* to avoid the lines being deformed by [m] *)
+    Cairo.stroke_preserve cr;
+    Cairo.set_matrix cr m
+
   module P = Archimedes_internals.Path
 
   let path_to_cairo cr = function
-    | P.Move_to(x, y) -> move_to cr x y
-    | P.Line_to(x, y) -> line_to cr x y
-    | P.Curve_to(_, _, x1, y1, x2, y2, x3, y3) -> curve_to cr x1 y1 x2 y2 x3 y3
-    | P.Close(x, y) -> close_path cr
-    | P. Array(x, y) ->
-      for i = 0 to Array.length x - 1 do line_to cr x.(i) y.(i) done
-    | P.Fortran(x, y) ->
-      for i = 1 to Array1.dim x do line_to cr x.{i} y.{i} done
+    | P.Move_to(x, y) -> Cairo.move_to cr x y
+    | P.Line_to(x, y) -> Cairo.line_to cr x y
+    | P.Curve_to(_, _, x1, y1, x2, y2, x3, y3) ->
+      Cairo.curve_to cr x1 y1 x2 y2 x3 y3
+    | P.Close(_, _) -> Cairo.Path.close cr
+    | P. Array(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do Cairo.line_to cr x.(i) y.(i) done
+      else
+        for i = i0 downto i1 do Cairo.line_to cr x.(i) y.(i) done
+    | P.Fortran(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do Cairo.line_to cr x.{i} y.{i} done
+      else
+        for i = i0 downto i1 do Cairo.line_to cr x.{i} y.{i} done
+    | P.C(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do Cairo.line_to cr x.{i} y.{i} done
+      else
+        for i = i0 downto i1 do Cairo.line_to cr x.{i} y.{i} done
 
-  (* The path is in reverse order.  Does this matter?
-     The clipping is taken care of by the cairo backend. *)
+  (* The clipping is taken care of by the cairo backend. *)
   let stroke_path_preserve cr p =
-    clear_path cr;
+    Cairo.Path.clear cr;
     P.iter p (path_to_cairo cr);
-    stroke_preserve cr
+    (* Line width is in defaukt coordinates: *)
+    let m = Cairo.get_matrix cr in
+    Cairo.set_matrix cr id;
+    Cairo.stroke cr; (* no need to preserve the copy of the path *)
+    Cairo.set_matrix cr m
 
   let fill_path_preserve cr p =
-    clear_path cr;
+    Cairo.Path.clear cr;
     P.iter p (path_to_cairo cr);
-    fill_preserve cr
+    Cairo.fill cr
 
 
   let select_font_face t slant weight family =
     (* Could be (unsafely) optimized *)
     let slant = match slant with
-      | Backend.Upright -> Cairo.Upright
-      | Backend.Italic -> Cairo.Italic
+      | A.Backend.Upright -> Cairo.Upright
+      | A.Backend.Italic -> Cairo.Italic
     and weight = match weight with
-      | Backend.Normal -> Cairo.Normal
-      | Backend.Bold -> Cairo.Bold in
+      | A.Backend.Normal -> Cairo.Normal
+      | A.Backend.Bold -> Cairo.Bold in
     Cairo.select_font_face t ~slant ~weight family
 
   let show_text cr ~rotate ~x ~y pos text =
@@ -183,18 +198,18 @@ struct
     Cairo.rotate cr angle;
     let te = Cairo.text_extents cr text in
     let x0 = match pos with
-      | Backend.CC | Backend.CT | Backend.CB ->
+      | A.Backend.CC | A.Backend.CT | A.Backend.CB ->
           te.x_bearing +. 0.5 *. te.width
-      | Backend.RC | Backend.RT | Backend.RB ->
+      | A.Backend.RC | A.Backend.RT | A.Backend.RB ->
           te.x_bearing
-      | Backend.LC | Backend.LT | Backend.LB ->
+      | A.Backend.LC | A.Backend.LT | A.Backend.LB ->
           te.x_bearing +. te.width
     and y0 = match pos with
-      | Backend.CC | Backend.RC | Backend.LC ->
+      | A.Backend.CC | A.Backend.RC | A.Backend.LC ->
           te.y_bearing +. 0.5 *. te.height
-      | Backend.CT | Backend.RT | Backend.LT ->
+      | A.Backend.CT | A.Backend.RT | A.Backend.LT ->
           te.y_bearing +. te.height
-      | Backend.CB | Backend.RB | Backend.LB ->
+      | A.Backend.CB | A.Backend.RB | A.Backend.LB ->
           te.y_bearing
     in
     Cairo.rel_move_to cr (-. x0) (-. y0);
@@ -218,7 +233,7 @@ struct
 end
 
 let () =
-  let module U = Backend.Register(B)  in ()
+  let module U = A.Backend.Register(B)  in ()
 
 
 

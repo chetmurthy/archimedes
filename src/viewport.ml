@@ -259,10 +259,10 @@ and Viewport : sig
   val close_path : t -> unit
   val clear_path : t -> unit
     (*val path_extents : t -> rectangle*)
-  val stroke_preserve : ?path:Path.t -> t -> coord_name -> unit
-  val stroke : ?path:Path.t -> t -> coord_name -> unit
-  val fill_preserve : ?path:Path.t -> t -> coord_name -> unit
-  val fill : ?path:Path.t -> t -> coord_name -> unit
+  val stroke_preserve : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
+  val stroke : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
+  val fill_preserve : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
+  val fill : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
   val clip_rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
     (*  val save_vp : t -> unit
         val restore_vp : t -> unit*)
@@ -303,6 +303,9 @@ and Viewport : sig
   val axes_ratio : t -> float -> unit
   val xrange : t -> float -> float -> unit
   val yrange : t -> float -> float -> unit
+  val xlabel : t -> string -> unit
+  val ylabel : t -> string -> unit
+  val title  : t -> string -> unit
 
   val set_xlog : t -> bool -> unit
   val set_ylog : t -> bool -> unit
@@ -388,7 +391,7 @@ end = struct
   (* Multiplier to get "user-friendly" values (e.g. 12pt instead of 0.024) *)
   let usr_lw, usr_ts, usr_ms = 500., 500., 100.
 
-  let def_lw, def_ts, def_ms = 1., 12., 5.
+  let def_lw, def_ts, def_ms = 1., 12., 7.
   let def_color = Color.black
   let def_line_cap = Backend.BUTT
   let def_dash = (0., [| |])
@@ -518,21 +521,19 @@ end = struct
     let path = get_path vp path coord_name in
     let coord = get_coord_from_name vp coord_name in
     Backend.save vp.backend;
-    let ctm = Coordinate.use vp.backend coord in
+    ignore(Coordinate.use vp.backend coord);
     apply_clip vp coord_name;
     Backend.stroke_path_preserve vp.backend path;
-    (* Coordinate.restore vp.backend ctm *) (* no need, CTM restored too *)
-    Backend.restore vp.backend
+    Backend.restore vp.backend (* remove CTM and clip *)
 
   let fill_direct ?path vp coord_name () =
     let path = get_path vp path coord_name in
     let coord = get_coord_from_name vp coord_name in
     Backend.save vp.backend;
-    let ctm = Coordinate.use vp.backend coord in
+    ignore(Coordinate.use vp.backend coord);
     apply_clip vp coord_name;
     Backend.fill_path_preserve vp.backend path;
-    (* Coordinate.restore vp.backend ctm *) (* no need, CTM restored too *)
-    Backend.restore vp.backend
+    Backend.restore vp.backend (* remove CTM and clip *)
 
   let clip_rectangle_direct vp ~x ~y ~w ~h () =
     Backend.clip_rectangle vp.backend x y w h
@@ -549,6 +550,8 @@ end = struct
   let orthoinstr_direct vp ~x ~y f =
     let ms = vp.mark_size /. vp.square_side in
     let x, y = ortho_from vp Data (x, y) in
+    (* FIXME: the idea of coordinate system is that we create them
+       and use/update them, not that we create new ones all the time. *)
     let coord = Coordinate.make_translate vp.coord_orthonormal
       (x -. ms /. 2.) (y -. ms /. 2.) in
     Coordinate.scale coord ms ms;
@@ -957,6 +960,19 @@ end = struct
   let set_xlog vp v = vp.axes_system.Axes.x.Axes.log <- v
   let set_ylog vp v = vp.axes_system.Axes.y.Axes.log <- v
 
+  (* FIXME: poor implementations.  The label should be stored and used
+     to determine the space for the graphic. *)
+  let xlabel_direct vp s =
+    show_text_direct vp Device ~x:0.5 ~y:0.01 Backend.CT s
+
+  let ylabel_direct vp s =
+    show_text_direct vp Device ~x:0.01 ~y:0.5 Backend.RC s
+      ~rotate:1.57079632679489656 (* pi / 2 *)
+
+  let title_direct vp s =
+    show_text_direct vp Device ~x:0.5 ~y:0.99 Backend.CB s
+
+
 (* Synchronization
  ***********************************************************************)
 
@@ -1204,34 +1220,24 @@ end = struct
 
   let path_extents vp = Path.extents vp.path
 
-  let fit_path vp path =
-    let e = Path.extents path in
-    let x0 = e.Matrix.x
-    and y0 = e.Matrix.y in
-    let x1 = x0 +. e.Matrix.w
-    and y1 = y0 +. e.Matrix.h in
-    auto_fit vp x0 y0 x1 y1
-
-  let stroke_preserve ?path vp coord_name =
+  let stroke_preserve ?path ?fit:(do_fit=true) vp coord_name =
     let path = get_path ~notransform:true vp path coord_name in
-    if coord_name = Data then
-      fit_path vp path;
+    if do_fit && coord_name = Data then fit vp (Path.extents path);
     let path = Path.copy path in
     add_instruction (stroke_direct ~path vp coord_name) vp
 
-  let stroke ?path vp coord_name =
-    stroke_preserve ?path vp coord_name;
+  let stroke ?path ?fit vp coord_name =
+    stroke_preserve ?path ?fit vp coord_name;
     if path = None then add_instruction (fun () -> Path.clear vp.path) vp
 
-  let fill_preserve ?path vp coord_name =
+  let fill_preserve ?path ?fit:(do_fit=true) vp coord_name =
     let path = get_path ~notransform:true vp path coord_name in
-    if coord_name = Data then
-      fit_path vp path;
+    if do_fit && coord_name = Data then fit vp (Path.extents path);
     let path = Path.copy path in
     add_instruction (fill_direct ~path vp coord_name) vp
 
-  let fill ?path vp coord_name =
-    fill_preserve ?path vp coord_name;
+  let fill ?path ?fit vp coord_name =
+    fill_preserve ?path ?fit vp coord_name;
     if path = None then add_instruction (fun () -> Path.clear vp.path) vp
 
   let clip_rectangle vp ~x ~y ~w ~h =
@@ -1271,6 +1277,15 @@ end = struct
       auto_fit vp x0 y0 xend yend
     end;
     add_instruction (show_text_direct vp coord_name ~rotate ~x ~y pos text) vp
+
+  let xlabel vp s =
+    add_instruction (xlabel_direct vp s) vp
+
+  let ylabel vp s =
+    add_instruction (ylabel_direct vp s) vp
+
+  let title vp s =
+    add_instruction (title_direct vp s) vp
 
   let mark vp ~x ~y name =
     auto_fit vp x y x y;

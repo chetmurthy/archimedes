@@ -13,3 +13,12 @@ Home page: http://forge.ocamlcore.org/projects/archimedes/
 
 
 (* OASIS_STOP *)
+
+Acknowledgments
+---------------
+
+This project was started in June 2009 thanks to financial support of
+Jane Street Capital <http://www.janestcapital.com/>.  It was also
+sponsored during the summer 2011 by the Faculty of Science of the
+University of Mons.  We are very grateful to both organizations for
+their support.

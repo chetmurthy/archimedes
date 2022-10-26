@@ -38,9 +38,8 @@ let tic vp x y (tic_type, tic_size) =
   V.mark_direct vp x y tic_type ()
 
 let draw_tic tic majors minors text = function
-  | Tics.Major (None, v) -> tic v majors
-  | Tics.Major (Some label, v) -> tic v majors;
-      text v label
+  | Tics.Major("", v) -> tic v majors
+  | Tics.Major(label, v) -> tic v majors;  text v label
   | Tics.Minor v -> tic v minors
 
 let arrow_offset xrange arrow =
@@ -66,14 +65,14 @@ let draw_x_axis grid major minor start stop tics offset vp () =
   and yrange = V.ymax vp -. V.ymin vp in
   let x1 = V.xmin vp -. arrow_offset xrange start
   and x2 = V.xmax vp +. arrow_offset xrange stop in
-  let tics_values = Tics.tics (V.xlog vp) x1 x2 tics in
-  let offset, pos = axis_offset (V.ymin vp) yrange offset in
+  let tics_values = Tics.tics ~log:(V.xlog vp) x1 x2 tics in
+  let offset, dir = axis_offset (V.ymin vp) yrange offset in
   Arrows.line_direct ~head:stop ~tail:start vp x1 offset x2 offset ();
   let tic x = tic vp x offset in
   let text x lbl =
     let x, y = V.ortho_from vp V.Data (x, offset) in
-    let y = y +. 0.0375 *. pos in
-    let align = if pos < 0. then Backend.CB else Backend.CT in
+    let y = y +. 0.02 *. dir in
+    let align = if dir < 0. then Backend.CB else Backend.CT in
     V.show_text_direct vp V.Orthonormal ~x ~y align lbl () in
   let grid_line = function
     | Tics.Major (_, x) -> let path = Path.make() in
@@ -94,14 +93,14 @@ let draw_y_axis grid major minor start stop tics offset vp () =
   and yrange = V.ymax vp -. V.ymin vp in
   let y1 = V.ymin vp -. arrow_offset yrange start
   and y2 = V.ymax vp +. arrow_offset yrange stop in
-  let tics_values = Tics.tics (V.ylog vp) (V.ymin vp) (V.ymax vp) tics in
-  let offset, pos = axis_offset (V.xmin vp) xrange offset in
+  let tics_values = Tics.tics ~log:(V.ylog vp) (V.ymin vp) (V.ymax vp) tics in
+  let offset, dir = axis_offset (V.xmin vp) xrange offset in
   Arrows.line_direct ~head:stop ~tail:start vp offset y1 offset y2 ();
   let tic y = tic vp offset y in
   let text y lbl =
     let x, y = V.ortho_from vp V.Data (offset, y) in
-    let x = x +. 0.0375 *. pos in
-    let align = if pos < 0. then Backend.LC else Backend.RC in
+    let x = x +. 0.02 *. dir in
+    let align = if dir < 0. then Backend.LC else Backend.RC in
     V.show_text_direct vp V.Orthonormal ~x ~y align lbl () in
   let grid_line = function
     | Tics.Major (_, y) -> let path = Path.make() in
@@ -117,9 +116,9 @@ let draw_y_axis grid major minor start stop tics offset vp () =
   end;
   List.iter (draw_tic tic major minor text) tics_values
 
-let add_x_axis ?(grid=false)
+let x ?(grid=false)
     ?(major=("tic_up", 3.)) ?(minor=("tic_up", 1.))
-    ?(start=Arrows.Unstyled) ?(stop=Arrows.Simple)
+    ?(start=Arrows.Unstyled) ?(stop=Arrows.Unstyled)
     ?(tics=Tics.Auto (Tics.Number 5)) ?(offset=Absolute 0.) vp =
   V.save vp;
   V.add_instruction
@@ -127,9 +126,9 @@ let add_x_axis ?(grid=false)
   V.add_instruction (fun () -> Backend.show(V.get_backend vp)) vp;
   V.restore vp
 
-let add_y_axis ?(grid=false)
+let y ?(grid=false)
     ?(major=("tic_right", 3.)) ?(minor=("tic_right", 1.))
-    ?(start=Arrows.Unstyled) ?(stop=Arrows.Simple)
+    ?(start=Arrows.Unstyled) ?(stop=Arrows.Unstyled)
     ?(tics=Tics.Auto (Tics.Number 5)) ?(offset=Absolute 0.) vp =
   V.save vp;
   V.add_instruction
@@ -137,22 +136,17 @@ let add_y_axis ?(grid=false)
   V.add_instruction (fun () -> Backend.show(V.get_backend vp)) vp;
   V.restore vp
 
-let box ?(grid=true) ?tics ?tics_alt vp =
-  let tics_alt = match tics_alt with
-  | None -> tics
-  | Some x -> Some x
-  in
-  add_x_axis ~grid ~start:Arrows.Unstyled ~stop:Arrows.Unstyled
-    ?tics ~offset:(Absolute 0.) vp;
-  add_x_axis ~start:Arrows.Unstyled ~stop:Arrows.Unstyled ?tics:tics_alt
-    ~offset:(Absolute 1.) ~major:("tic_down", 3.) ~minor:("tic_down", 1.) vp;
-  add_y_axis ~grid ~start:Arrows.Unstyled ~stop:Arrows.Unstyled
-    ?tics ~offset:(Absolute 0.) vp;
-  add_y_axis ~start:Arrows.Unstyled ~stop:Arrows.Unstyled ?tics:tics_alt
-    ~offset:(Absolute 1.) ~major:("tic_left", 3.) ~minor:("tic_left", 1.) vp
+
+let box ?(grid=true) ?tics ?(tics_alt=Tics.Auto Tics.No_label) vp =
+  x vp ~grid ?tics ~offset:(Absolute 0.)
+    ~start:Arrows.Unstyled ~stop:Arrows.Unstyled;
+  x vp ~tics:tics_alt ~start:Arrows.Unstyled ~stop:Arrows.Unstyled
+    ~offset:(Absolute 1.) ~major:("tic_down", 3.) ~minor:("tic_down", 1.);
+  y vp ~grid ?tics ~offset:(Absolute 0.)
+    ~start:Arrows.Unstyled ~stop:Arrows.Unstyled;
+  y vp ~tics:tics_alt ~start:Arrows.Unstyled ~stop:Arrows.Unstyled
+    ~offset:(Absolute 1.) ~major:("tic_left", 3.) ~minor:("tic_left", 1.)
 
 let cross ?tics vp =
-  add_x_axis ?tics ~offset:(Relative 0.) ~major:("|", 2.)
-    ~minor:("|", 1.) vp;
-  add_y_axis ?tics ~offset:(Relative 0.) ~major:("-", 2.)
-    ~minor:("-", 1.) vp
+  x ?tics ~offset:(Relative 0.) ~major:("|", 2.) ~minor:("|", 1.) vp;
+  y ?tics ~offset:(Relative 0.) ~major:("-", 2.) ~minor:("-", 1.) vp

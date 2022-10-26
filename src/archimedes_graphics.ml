@@ -20,13 +20,13 @@
 
 open Printf
 open Bigarray
-open Archimedes
+module A = Archimedes
 module P = Archimedes_internals.Path
 
 let min a b = if (a:float) < b then a else b
 let max a b = if (a:float) > b then a else b
 
-let round x = truncate(if x >= 0. then x +. 0.5 else x -. 0.5)
+let round x = truncate(if x < 0. then x -. 0.5 else x +. 0.5)
 
 let fourth_pi = atan 1.
 let pi = 4. *. fourth_pi
@@ -49,13 +49,13 @@ struct
        graphics line width, according to the CTM. *)
     mutable dash_offset: float;
     mutable dash: float array;
-    mutable ctm : Matrix.t; (* current transformation matrix from the
+    mutable ctm : A.Matrix.t; (* current transformation matrix from the
                                user coordinates to the device ones. *)
-    mutable font_slant: Backend.slant;
-    mutable font_weight: Backend.weight;
+    mutable font_slant: A.Backend.slant;
+    mutable font_weight: A.Backend.weight;
     mutable font_family: string;
     mutable font_size : float;
-    mutable clip : Matrix.rectangle;
+    mutable clip : A.Matrix.rectangle;
     mutable clip_set : bool;
   }
 
@@ -67,7 +67,7 @@ struct
     (* save/restore do not affect the current path. *)
     (* The current path, in device coordinates.  The path structure
        includes its extent and the current point. *)
-    mutable current_path: Path.t
+    mutable current_path: A.Path.t
   }
 
   let check_valid_handle t =
@@ -83,7 +83,7 @@ struct
        it. We need to store a *copy* of the ctm, because
        scaling/translation/rotation mustn't modify this stored
        matrix.*)
-    let state_copy = { st with ctm = Matrix.copy st.ctm} in
+    let state_copy = { st with ctm = A.Matrix.copy st.ctm} in
     Stack.push state_copy t.history
 
   let restore t =
@@ -111,7 +111,7 @@ struct
     List.iter (fun o ->
                  if o = "hold" then hold := true;
               ) options;
-    Graphics.open_graph(sprintf " %.0fx%.0f-10+10"
+    Graphics.open_graph(sprintf " %.0fx%.0f"
                           (width +. !ofsw) (height +. !ofsh));
     Graphics.set_window_title "Archimedes";
     Graphics.auto_synchronize false;
@@ -122,19 +122,19 @@ struct
       dash_offset = 0.;
       dash = [| |]; (* no dash *)
       (* Identity transformation matrix *)
-      ctm = Matrix.make_identity();
-      font_slant = Backend.Upright;
-      font_weight = Backend.Normal;
+      ctm = A.Matrix.make_identity();
+      font_slant = A.Backend.Upright;
+      font_weight = A.Backend.Normal;
       font_family = "*";
       font_size = 10.;
-      clip = { Matrix.x = nan; y = nan; w = nan; h = nan };
+      clip = { A.Matrix.x = nan; y = nan; w = nan; h = nan };
       clip_set = false;
     } in
     { closed = false;
       hold = !hold;
       history = Stack.create();
       state = state;
-      current_path = Path.make();
+      current_path = A.Path.make();
     }
 
   let show _t = Graphics.synchronize()
@@ -154,13 +154,13 @@ struct
 
   let clear_path t =
     check_valid_handle t;
-    Path.clear t.current_path
+    A.Path.clear t.current_path
 
   let set_color t c =
     let st = get_state t in
-    let r = round(Color.r c *. 255.)
-    and g = round(Color.g c *. 255.)
-    and b = round(Color.b c *. 255.) in
+    let r = round(A.Color.r c *. 255.)
+    and g = round(A.Color.g c *. 255.)
+    and b = round(A.Color.b c *. 255.) in
     let color = Graphics.rgb r g b in
     st.color <- color;
     Graphics.set_color color
@@ -189,49 +189,49 @@ struct
 
   (* Not supported, do nothing *)
   let set_line_cap t _ = check_valid_handle t
-  let get_line_cap t = check_valid_handle t; Backend.ROUND
+  let get_line_cap t = check_valid_handle t; A.Backend.ROUND
   let set_line_join t _ = check_valid_handle t
-  let get_line_join t = check_valid_handle t; Backend.JOIN_MITER
+  let get_line_join t = check_valid_handle t; A.Backend.JOIN_MITER
   let set_miter_limit t _ = check_valid_handle t
 
   let move_to t ~x ~y =
     let st = get_state t in
-    let x', y' = Matrix.transform_point st.ctm x y in
-    Path.move_to t.current_path x' y'
+    let x', y' = A.Matrix.transform_point st.ctm x y in
+    A.Path.move_to t.current_path x' y'
 
   let line_to t ~x ~y =
     let st = get_state t in
-    let x', y' = Matrix.transform_point st.ctm x y in
-    Path.line_to t.current_path x' y'
+    let x', y' = A.Matrix.transform_point st.ctm x y in
+    A.Path.line_to t.current_path x' y'
 
   let rel_move_to t ~x ~y =
     let st = get_state t in
-    let x, y = Matrix.transform_distance st.ctm x y in
-    Path.rel_move_to t.current_path x y
+    let x, y = A.Matrix.transform_distance st.ctm x y in
+    A.Path.rel_move_to t.current_path x y
 
   let rel_line_to t ~x ~y =
     let st = get_state t in
-    let x',y' = Matrix.transform_distance st.ctm x y in
-    Path.rel_line_to t.current_path x' y'
+    let x',y' = A.Matrix.transform_distance st.ctm x y in
+    A.Path.rel_line_to t.current_path x' y'
 
   let rectangle t ~x ~y ~w ~h =
     let st = get_state t in
-    let x', y' = Matrix.transform_point st.ctm x y
-    and w'x, w'y = Matrix.transform_distance st.ctm w 0.
-    and h'x, h'y = Matrix.transform_distance st.ctm 0. h in
-    Path.move_to t.current_path x' y';
-    Path.rel_line_to t.current_path w'x w'y;
-    Path.rel_line_to t.current_path h'x h'y;
-    Path.rel_line_to t.current_path (-. w'x) (-. w'y);
-    Path.close t.current_path
+    let x', y' = A.Matrix.transform_point st.ctm x y
+    and w'x, w'y = A.Matrix.transform_distance st.ctm w 0.
+    and h'x, h'y = A.Matrix.transform_distance st.ctm 0. h in
+    A.Path.move_to t.current_path x' y';
+    A.Path.rel_line_to t.current_path w'x w'y;
+    A.Path.rel_line_to t.current_path h'x h'y;
+    A.Path.rel_line_to t.current_path (-. w'x) (-. w'y);
+    A.Path.close t.current_path
 
   let internal_curve_to t st ~x1 ~y1 ~x2 ~y2 ~x3 ~y3 =
     (* Suffices to transform the control point by the affine
        transformation to have the affine image of the curve *)
-    let x1', y1' = Matrix.transform_point st.ctm x1 y1 in
-    let x2', y2' = Matrix.transform_point st.ctm x2 y2 in
-    let x3', y3' = Matrix.transform_point st.ctm x3 y3 in
-    Path.curve_to t.current_path x1' y1' x2' y2' x3' y3'
+    let x1', y1' = A.Matrix.transform_point st.ctm x1 y1 in
+    let x2', y2' = A.Matrix.transform_point st.ctm x2 y2 in
+    let x3', y3' = A.Matrix.transform_point st.ctm x3 y3 in
+    A.Path.curve_to t.current_path x1' y1' x2' y2' x3' y3'
 
   let curve_to t ~x1 ~y1 ~x2 ~y2 ~x3 ~y3 =
     internal_curve_to t (get_state t) ~x1 ~y1 ~x2 ~y2 ~x3 ~y3
@@ -244,36 +244,36 @@ struct
     (* One must transform the arc to bezier curves before acting with
        the CTM as it may deform the arc. *)
     let x, y =
-      try Path.current_point t.current_path
+      try A.Path.current_point t.current_path
       with _ -> failwith "archimedes_graphics.arc: no current point" in
-    let x0, y0 = Matrix.inv_transform_point st.ctm x y in
+    let x0, y0 = A.Matrix.inv_transform_point st.ctm x y in
     P.bezier_of_arc st (arc_add_piece t) ~x0 ~y0 ~r ~a1 ~a2
 
   let close_path t =
     check_valid_handle t;
-    Path.close t.current_path
+    A.Path.close t.current_path
 
-  let path_extents t = Path.extents t.current_path
+  let path_extents t = A.Path.extents t.current_path
 
   let clip_rectangle t ~x ~y ~w ~h =
     let st = get_state t in
-    let x, y = Matrix.transform_point st.ctm x y in
-    let w, h = Matrix.transform_distance st.ctm w h in
-    st.clip <- { Matrix.x = x; y = y; w = w; h = h };
+    let x, y = A.Matrix.transform_point st.ctm x y in
+    let w, h = A.Matrix.transform_distance st.ctm w h in
+    st.clip <- { A.Matrix.x = x; y = y; w = w; h = h };
     st.clip_set <- true
 
-  let translate t ~x ~y = Matrix.translate (get_state t).ctm x y
+  let translate t ~x ~y = A.Matrix.translate (get_state t).ctm x y
 
-  let scale t ~x ~y = Matrix.scale (get_state t).ctm x y
+  let scale t ~x ~y = A.Matrix.scale (get_state t).ctm x y
 
-  let rotate t ~angle = Matrix.rotate (get_state t).ctm ~angle
+  let rotate t ~angle = A.Matrix.rotate (get_state t).ctm ~angle
 
   let set_matrix t m =
     (*Replaces the ctm with a *copy* of m so that modifying m does not
       change the (newly set) coordinate system.*)
-    (get_state t).ctm <- Matrix.copy m
+    (get_state t).ctm <- A.Matrix.copy m
 
-  let get_matrix t = Matrix.copy (get_state t).ctm
+  let get_matrix t = A.Matrix.copy (get_state t).ctm
 
 
   (* Real plotting procedures (perform clipping)
@@ -286,8 +286,8 @@ struct
 
   let box st =
     let m = st.clip in
-    { x0 = m.Matrix.x;  y0 = m.Matrix.y;
-      x1 = m.Matrix.x +. m.Matrix.w;  y1 = m.Matrix.y +. m.Matrix.h;
+    { x0 = m.A.Matrix.x;  y0 = m.A.Matrix.y;
+      x1 = m.A.Matrix.x +. m.A.Matrix.w;  y1 = m.A.Matrix.y +. m.A.Matrix.h;
       must_clip = st.clip_set;
       x = nan; y = nan; }
 
@@ -362,21 +362,38 @@ struct
     | P.Close(x, y) ->
       let x, y = to_bk x y in
       stroke_line_to b x y
-    | P.Array(x, y) ->
-      for i = 0 to Array.length x - 1 do
-        let x, y = to_bk x.(i) y.(i) in
-        stroke_line_to b x y
-      done
-    | P.Fortran(x, y) ->
-      for i = 1 to Array1.dim x do
-        let x, y = to_bk x.{i} y.{i} in
-        stroke_line_to b x y
-      done
+    | P.Array(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do
+          let x, y = to_bk x.(i) y.(i) in stroke_line_to b x y
+        done
+      else
+        for i = i0 downto i1 do
+          let x, y = to_bk x.(i) y.(i) in stroke_line_to b x y
+        done
+    | P.Fortran(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do
+          let x, y = to_bk x.{i} y.{i} in stroke_line_to b x y
+        done
+      else
+        for i = i0 downto i1 do
+          let x, y = to_bk x.{i} y.{i} in stroke_line_to b x y
+        done
+    | P.C(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do
+          let x, y = to_bk x.{i} y.{i} in stroke_line_to b x y
+        done
+      else
+        for i = i0 downto i1 do
+          let x, y = to_bk x.{i} y.{i} in stroke_line_to b x y
+        done
     | P.Curve_to(_, _, x1, y1, x2, y2, x3, y3) ->
       let x1, y1 = to_bk x1 y1
       and x2, y2 = to_bk x2 y2
       and x3, y3 = to_bk x3 y3 in
-      (* FIXME: clip BÃ©zier curve *)
+      (* FIXME: clip Bézier curve *)
       Graphics.curveto
         (round x1, round y1) (round x2, round y2) (round x3, round y3)
 
@@ -390,12 +407,12 @@ struct
 
   let stroke t =
     stroke_preserve t;
-    Path.clear t.current_path
+    A.Path.clear t.current_path
 
   let stroke_path_preserve t path =
     let st = get_state t in
     graphics_set_line_width st;
-    let to_bk x y = Matrix.transform_point st.ctm x y in
+    let to_bk x y = A.Matrix.transform_point st.ctm x y in
     P.iter path (stroke_on_backend (box st) to_bk)
 
 
@@ -439,6 +456,7 @@ struct
   let rec gather_subpath b to_bk coords = function
     | P.Move_to(x,y) ->
       fill_subpath !coords;  (* previous subpath *)
+      coords := [];  (* Clean the coords of the subpath already filled. *)
       let x, y = to_bk x y in
       b.x <- x;
       b.y <- y;  (* Do no put the pt in coords in case 2 Move_to follow *)
@@ -446,17 +464,38 @@ struct
     | P.Close(x,y) ->
       let x, y = to_bk x y in
       fill_line_to b x y coords
-    | P.Array(x, y) ->
-      for i = 0 to Array.length x - 1 do
-        let x, y = to_bk x.(i) y.(i) in
-        fill_line_to b x y coords
-      done
-    | P.Fortran(x, y) ->
-      for i = 1 to Array1.dim x do
-        let x, y = to_bk x.{i} y.{i} in
-        fill_line_to b x y coords
-      done
+    | P.Array(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do
+          let x, y = to_bk x.(i) y.(i) in fill_line_to b x y coords
+        done
+      else
+        for i = i0 downto i1 do
+          let x, y = to_bk x.(i) y.(i) in fill_line_to b x y coords
+        done
+    | P.Fortran(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do
+          let x, y = to_bk x.{i} y.{i} in fill_line_to b x y coords
+        done
+      else
+        for i = i0 downto i1 do
+          let x, y = to_bk x.{i} y.{i} in fill_line_to b x y coords
+        done
+    | P.C(x, y, i0, i1) ->
+      if i0 <= i1 then
+        for i = i0 to i1 do
+          let x, y = to_bk x.{i} y.{i} in fill_line_to b x y coords
+        done
+      else
+        for i = i0 downto i1 do
+          let x, y = to_bk x.{i} y.{i} in fill_line_to b x y coords
+        done
     | P.Curve_to(x0,y0, x1,y1, x2,y2, x3,y3) ->
+      let x0, y0 = to_bk x0 y0
+      and x1, y1 = to_bk x1 y1
+      and x2, y2 = to_bk x2 y2
+      and x3, y3 = to_bk x3 y3 in
       add_curve_sampling b x0 y0 x1 y1 x2 y2 x3 y3 coords
 
 
@@ -470,11 +509,11 @@ struct
 
   let fill t =
     fill_preserve t;
-    Path.clear t.current_path
+    A.Path.clear t.current_path
 
   let fill_path_preserve t path =
     let st = get_state t in
-    let to_bk x y = Matrix.transform_point st.ctm x y in
+    let to_bk x y = A.Matrix.transform_point st.ctm x y in
     (* Line width does not matter for "fill". *)
     let coords = ref [] in
     P.iter path (gather_subpath (box st) to_bk coords);
@@ -486,11 +525,11 @@ struct
   (* FIXME: What about win32 and mac ? *)
   let string_of_font st =
     let slant = match st.font_slant with
-      | Backend.Upright -> 'r'
-      | Backend.Italic -> 'i' in
+      | A.Backend.Upright -> 'r'
+      | A.Backend.Italic -> 'i' in
     let weight = match st.font_weight with
-      | Backend.Normal -> "medium"
-      | Backend.Bold -> "bold" in
+      | A.Backend.Normal -> "medium"
+      | A.Backend.Bold -> "bold" in
     sprintf "-*-%s-%s-%c-normal--%i-*-*-*-*-*-iso10646-*"
       st.font_family weight slant (round st.font_size)
 
@@ -510,7 +549,7 @@ struct
   let text_extents t txt =
     check_valid_handle t;
     let w, h = Graphics.text_size txt in
-    { Matrix.x = 0.; y = 0.; w = float w ; h = float h }
+    { A.Matrix.x = 0.; y = 0.; w = float w ; h = float h }
 
   let rotate_extents angle x0 y0 w0 h0 =
     Printf.printf "DEBUG: Before: %f %f %f %f\n%!" x0 y0 w0 h0;
@@ -537,69 +576,127 @@ struct
     Printf.printf "DEBUG: After: %f %f %f %f\n%!" retx rety retw reth;
     retx, rety, retw, reth
 
+  (* Rotation of a color matrix image from center point using nearest
+     neightbor sampling. Also gives the position of some point from source
+     image in the new image. *)
+  (* FIXME: Use Graphics Gems shearing rotation. GG 1, p. 179 *)
+  let rotate_image simg px py angle =
+    (* FIXME: If angle is a multiple of PI/2, use trivial transposition
+       and symmetry. *)
+    assert (Array.length simg > 0 && Array.length simg.(0) > 0);
+    (* Source Width/Height. We measure distances between center of pixels,
+       so a line of 3 pixels is of width 2. *)
+    let sw = float (pred (Array.length simg.(0)))
+    and sh = float (pred (Array.length simg)) in
+    (* Output Width/Height. *)
+    (* FIXME: having to set 0. 0. is totally useless; refactor that ! *)
+    let _, _, ow, oh = rotate_extents angle 0. 0. sw sh in
+    let ow', oh' = round ow, round oh in
+    let swc, shc = sw *. 0.5, sh *. 0.5
+    and owc, ohc = ow *. 0.5, oh *. 0.5
+    and sina = -. sin angle and cosa = cos angle in
+    (* Get color in source [simg] for (x, y) pixel in output image. *)
+    let rot x y =
+      (* dump_image gives a color matrix with coordinates as :
+         [| [| (0, 1); (1, 1) |];
+         [| (0, 0); (1, 0) |] |] *)
+      let x', y' = x -. owc, float oh' -. y -. ohc in
+      (* Output coords to source coords => inverse rotation. *)
+      let xrot = cosa *. x' -. sina *. y'
+      and yrot = sina *. x' +. cosa *. y' in
+      (xrot +. swc, sh -. yrot -. shc)
+    in
+    let get_color x y =
+      try
+        let sx, sy = rot (float x) (float y) in
+        simg.(round sy).(round sx)
+      with Invalid_argument _ -> Graphics.transp
+    in
+    (Array.init (succ oh')
+       (fun y -> Array.init (succ ow')
+         (fun x -> get_color x y)),
+    rot px py)
+
+  (* Returns the color matrix with [str] printed in [color]. *)
+  let string_img str color =
+    let w, h = Graphics.text_size str in
+    let buf = Array.make_matrix h w Graphics.transp in
+    let max_w, max_h = Graphics.size_x (), Graphics.size_y () in
+    let piece_w, piece_h = Pervasives.min w max_w, Pervasives.min h max_h in
+    let w_pieces, h_pieces = piece_w / max_w, piece_h / max_h in
+    let w_lst_piece, h_lst_piece = piece_w mod max_w, piece_h mod max_h in
+    (* Save graphic work area. *)
+    let backup = Graphics.get_image 0 0 piece_w piece_h in
+    (* Setup graphic work area. *)
+    let transp = abs (pred color) in
+    Graphics.set_color transp;
+    Graphics.fill_rect 0 0 w h;
+    Graphics.set_color color;
+    (* Copy pieces of the string image to [buf]. *)
+    let x_offset, y_offset = ref 0, ref 0 in
+    let cpy_piece x_offset y_offset piece_w piece_h i j =
+      Graphics.moveto (-x_offset) y_offset;
+      Graphics.draw_string str;
+      let piece =
+        Graphics.dump_image (Graphics.get_image 0 0 piece_w piece_h)
+      in
+      let update_buf_pixel i j oi oj color =
+        buf.(i + oi).(j + oj) <-
+          if color = transp then Graphics.transp else color
+      in
+      Array.iteri (fun oi ->
+        Array.iteri (fun oj color -> update_buf_pixel i j oi oj color)) piece
+    in
+    for i = 0 to pred h_pieces do
+      for j = 0 to pred w_pieces do
+        cpy_piece !x_offset !y_offset piece_w piece_h i j;
+        x_offset := !x_offset + piece_w
+      done;
+      (* Copy last horizontal partial piece. *)
+      cpy_piece !x_offset !y_offset w_lst_piece piece_h i w_pieces;
+      y_offset := !y_offset + piece_h
+    done;
+    (* Copy last partial piece. *)
+    cpy_piece !x_offset !y_offset w_lst_piece h_lst_piece h_pieces w_pieces;
+    (* Restore graphics work area. *)
+    Graphics.draw_image backup 0 0;
+    buf
+
   let show_text t ~rotate ~x ~y pos txt =
     let st = get_state t in
     (* Compute the angle between the desired direction and the X axis
        in the device coord. system. *)
-    let dx, dy = Matrix.transform_distance st.ctm (cos rotate) (sin rotate) in
+    let dx, dy = A.Matrix.transform_distance st.ctm (cos rotate) (sin rotate) in
     let angle = atan2 dy dx in
-    let x', y' = Matrix.transform_point st.ctm x y in
+    let x', y' = A.Matrix.transform_point st.ctm x y in
     let w', h' = Graphics.text_size txt in
     (* text_size returns size already in device coords.*)
-    let x'' = match pos with
-      | Backend.CC | Backend.CT | Backend.CB -> x' -. float w' *. 0.5
-      | Backend.RC | Backend.RT | Backend.RB -> x'
-      | Backend.LC | Backend.LT | Backend.LB -> x' -. float w'
-    and y'' =  match pos with
-      | Backend.CC | Backend.RC | Backend.LC -> y' -. float h' *. 0.5
-      | Backend.CT | Backend.RT | Backend.LT -> y'
-      | Backend.CB | Backend.RB | Backend.LB -> y' -. float h'
-    in let x'' = round x'' and y'' = round y'' in
-    Graphics.moveto x'' y'';
-    if abs_float angle <= 1e-6 then
-      Graphics.draw_string txt
-    else begin
-      save t;
-      (* Sauvegarde de la portion de travail *)
-      let backup = Graphics.get_image x'' y'' w' h' in
-      let invisx, invisy, invisw, invish =
-        rotate_extents angle (float x'') (float y'') (float w') (float h')
-      in
-      (* Graphics.display_mode false; *)
-      Graphics.set_color Graphics.white;
-      Printf.printf "DEBUG(show_text): %f %f %f %f\n%!"
-        invisx invisy invisw invish;
-      Graphics.fill_rect (round invisx) (round invisy)
-        (round invisw) (round invish);
-      Graphics.moveto x'' y'';
-      restore t;
-      Graphics.draw_string txt;
-      let m = Graphics.dump_image(Graphics.get_image x'' y'' w' h') in
-      let m2 = Array.make_matrix (round invish) (round invish) (-1) in
-      let place y x v =
-        if v <> Graphics.white then
-          let sina = sin angle and cosa = cos angle in
-          let xcentered, ycentered = float (x - w' / 2), float (y - h' / 2) in
-          let xrotated, yrotated =
-            cosa *. xcentered -. sina *. ycentered +. invisw /. 2.,
-            sina *. xcentered +. cosa *. ycentered +. invish /. 2.
-          in
-          try
-            m2.(round yrotated).(round xrotated) <- v
-          with _ -> ()
-      in
-      Array.iteri (fun y -> Array.iteri (place y)) m;
-      let img2 = Graphics.make_image m2 in
-      Graphics.draw_image backup x'' y'';
-      (* Graphics.display_mode true; *)
-      Graphics.draw_image img2 (round invisx) (round invisy)
-    end
+    let px = match pos with
+      | A.Backend.LC | A.Backend.LT | A.Backend.LB -> float w'
+      | A.Backend.CC | A.Backend.CT | A.Backend.CB -> float w' *. 0.5
+      | A.Backend.RC | A.Backend.RT | A.Backend.RB -> 0.
+    and py = match pos with
+      | A.Backend.CB | A.Backend.RB | A.Backend.LB -> float h'
+      | A.Backend.CC | A.Backend.RC | A.Backend.LC -> float h' *. 0.5
+      | A.Backend.CT | A.Backend.RT | A.Backend.LT -> 0.
+    in
+    if w' > 0 && h' > 0 then (
+      if abs_float angle <= 1e-6 then
+        (Graphics.moveto (round (x' -. px)) (round (y' -. py));
+         Graphics.draw_string txt)
+      else
+        let rimg, (rx, ry) =
+          rotate_image (string_img txt st.color) px py rotate
+        in
+        Graphics.draw_image (Graphics.make_image rimg)
+          (round (x' -. rx)) (round (y' -. ry))
+    )
 
   let flipy _t = false
 end
 
 let () =
-  let module U = Backend.Register(B) in
+  let module U = A.Backend.Register(B) in
   if Sys.os_type = "Win32" then (
     (* Set offsets so the actual surface is of the requested size. *)
     Graphics.open_graph " 100x100";

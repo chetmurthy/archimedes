@@ -1,3 +1,5 @@
+WEB = shell.forge.ocamlcore.org:/home/groups/archimedes/htdocs
+
 PKGNAME = $(shell oasis query name)
 PKGVERSION = $(shell oasis query version)
 PKG_TARBALL = $(PKGNAME)-$(PKGVERSION).tar.gz
@@ -26,7 +28,7 @@ doc install uninstall reinstall: all
 	ocaml setup.ml -$@
 
 upload-doc: doc
-	scp -C -r _build/src/API.docdir/ $(WEB)/API
+	scp -C -r _build/src/API.docdir/ $(WEB)/
 
 
 # Make a tarball

@@ -1,6 +1,6 @@
 (** A 2D plotting library with various backends.
 
-    @version 0.3.2
+    @version 0.3.3
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke
@@ -12,7 +12,7 @@
 
     {[
     module A = Archimedes
-    let vp = A.init "graphic hold" in
+    let vp = A.init ["graphic"; "hold"] in
     A.Axes.box vp;
     A.fx vp sin 0. 10.;
     A.close vp

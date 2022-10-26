@@ -468,4 +468,15 @@ let package_default =
 let dispatch_default = MyOCamlbuildBase.dispatch_default package_default;;
 
 (* OASIS_STOP *)
-Ocamlbuild_plugin.dispatch dispatch_default;;
+
+Ocamlbuild_plugin.dispatch
+  (MyOCamlbuildBase.dispatch_combine [
+    dispatch_default;
+    begin function
+    | After_rules ->
+
+      dep ["file:src/plot.ml"] ["src" / "plot_arr.ml"];
+
+    | _ -> ()
+    end;
+  ]);;

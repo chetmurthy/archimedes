@@ -51,23 +51,32 @@ val line_to: t -> x:float -> y:float -> unit
 (** [line_to p x y] draws a line from the path's current point to ([x],
     [y]) and sets the current point to ([x], [y]) *)
 
-val line_of_array: t ->
+val line_of_array: t -> ?i0:int -> ?i1:int ->
   ?const_x:bool -> float array -> ?const_y:bool -> float array -> unit
 (** [line_of_array p x y] continue the current line (or start a new
     one) with the line formed by joining the points [x.(i), y.(i)],
-    [i=0, 1,...].
+    [i=i0,...,i1] (with possibly [i0 > i1] to indicate that the
+    indices must be followed in decreasing order).
 
     @param const_x by setting it to [true], you indicate that you will
     not modify [x] (so it will not be copied).  Default: false.
     @param const_y Same as [const_x] but for [y].
-    @raise Failure if [x] and [y] do not have the same length. *)
+    @param i0 start index.  Default: [0].
+    @param i1 last index.  Default: [Array.length x - 1].
+    @raise Failure if [y] is to small to possess the indices [i0 .. i1]. *)
 
 type vec =
   (float, Bigarray.float64_elt, Bigarray.fortran_layout) Bigarray.Array1.t
 
-val line_of_fortran: t ->
+val line_of_vec: t -> ?i0:int -> ?i1:int ->
   ?const_x:bool -> vec -> ?const_y:bool -> vec -> unit
 (** Same as {!line_of_array} but for FORTRAN bigarrays. *)
+
+type cvec = (float, Bigarray.float64_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+val line_of_cvec: t -> ?i0:int -> ?i1:int ->
+  ?const_x:bool -> cvec -> ?const_y:bool -> cvec -> unit
+(** Same as {!line_of_array} but for C bigarrays. *)
 
 
 val rel_move_to: t -> x:float -> y:float -> unit
@@ -129,26 +138,36 @@ type data = private
   | Close of float * float
   (* Optimizations for some specific data structures that are used
      for caching data points.  *)
-  | Array of float array * float array
-  (* Array(x, y, pt), the x and y indices increase along the path.
-     [x] and [y] have the same length and are not empty.  Equivalent
-     to [line_to x.(i) y.(i)] for all [i] but with better storage
-     efficiency. *)
-  | Fortran of vec * vec
+  | Array of float array * float array * int * int
+  (** [Array(x, y, i0, i1)] correspond to [line_to x.(i) y.(i)] for [i
+      = i0,...,i1].  Beware that it is possible that [i0 > i1] to
+      indicate that indices must be followed in decreasing order.  It
+      is guaranteed that [x] and [y] have the same length and that
+      [i0] and [i1] are valid indices. *)
+  | Fortran of vec * vec * int * int
+  | C of cvec * cvec * int * int
 
 
 val iter : t ->  (data -> unit) -> unit
+(** [iter p f] iterates [f] on all components of the path [p]. *)
 
 val fprint: out_channel -> t -> unit
 (** [print_path p] Debug function. *)
 
-val unsafe_line_of_array : t -> float array -> float array -> unit
+val unsafe_line_of_array : t -> float array -> float array -> int -> int -> unit
 (** Same as {!line_of_array} except that the arrays are ASSUMED to be
-    of the same length, non-empty, and are NOT copied. *)
+    of the same length, the indices valid, and the arrays are NOT
+    copied. *)
 
-val unsafe_line_of_fortran: t -> vec -> vec -> unit
-(** Same as {!line_of_fortran} except that the arrays are ASSUMED to
-    be of the same length, non-empty, and are NOT copied. *)
+val unsafe_line_of_vec: t -> vec -> vec -> int -> int -> unit
+(** Same as {!line_of_vec} except that the arrays are ASSUMED to be
+    of the same length, the indices valid, and the arrays are NOT
+    copied. *)
+
+val unsafe_line_of_cvec: t -> cvec -> cvec -> int -> int -> unit
+(** Same as {!line_of_cvec} except that the arrays are ASSUMED to be
+    of the same length, the indices valid, and the arrays are NOT
+    copied. *)
 
 val bezier_of_arc : 'a ->
   ('a -> x0:float -> y0:float -> x1:float -> y1:float -> x2:float -> y2:float ->

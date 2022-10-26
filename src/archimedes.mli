@@ -1,7 +1,7 @@
 
 (** A 2D plotting library with various backends.
 
-    @version 0.3.2
+    @version 0.3.3
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke
@@ -13,7 +13,7 @@
 
     {[
     module A = Archimedes
-    let vp = A.init "graphic hold" in
+    let vp = A.init ["graphic"; "hold"] in
     A.Axes.box vp;
     A.fx vp sin 0. 10.;
     A.close vp
@@ -272,6 +272,7 @@ sig
   val ivory : t
   val linen : t
   val wheat : t
+  val white_smoke : t
 
   (** {4 Shades of Yellow} *)
 
@@ -279,6 +280,13 @@ sig
   val light_goldenrod : t
   val cornsilk : t
   val gold : t
+
+  (** {4 Shades of black} *)
+
+  val light_gray : t
+  val gainsboro : t
+  val silver : t
+  val trolley_grey : t
 
 
   (** {3 Merging colors} *)
@@ -362,23 +370,32 @@ sig
   (** [line_to p x y] draws a line from the path's current point to ([x],
       [y]) and sets the current point to ([x], [y]) *)
 
-  val line_of_array: t ->
+  val line_of_array: t -> ?i0:int -> ?i1:int ->
     ?const_x:bool -> float array -> ?const_y:bool -> float array -> unit
   (** [line_of_array p x y] continue the current line (or start a new
       one) with the line formed by joining the points [x.(i), y.(i)],
-      [i=0, 1,...].
+      [i=i0,...,i1] (with possibly [i0 > i1] to indicate that the
+      indices must be followed in decreasing order).
 
       @param const_x by setting it to [true], you indicate that you will
       not modify [x] (so it will not be copied).  Default: false.
       @param const_y Same as [const_x] but for [y].
-      @raise Failure if [x] and [y] do not have the same length. *)
+      @param i0 start index.  Default: [0].
+      @param i1 last index.  Default: [Array.length x - 1].
+      @raise Failure if [y] is to small to possess the indices [i0 .. i1]. *)
 
   type vec =
     (float, Bigarray.float64_elt, Bigarray.fortran_layout) Bigarray.Array1.t
 
-  val line_of_fortran: t ->
+  val line_of_vec: t -> ?i0:int -> ?i1:int ->
     ?const_x:bool -> vec -> ?const_y:bool -> vec -> unit
   (** Same as {!line_of_array} but for FORTRAN bigarrays. *)
+
+  type cvec = (float, Bigarray.float64_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+  val line_of_cvec: t -> ?i0:int -> ?i1:int ->
+    ?const_x:bool -> cvec -> ?const_y:bool -> cvec -> unit
+  (** Same as {!line_of_array} but for C bigarrays. *)
 
 
   val rel_move_to: t -> x:float -> y:float -> unit
@@ -477,9 +494,9 @@ sig
     val set_color : t -> Color.t -> unit
     (** [set_color bk c] sets the color of the backend [bk] to [c]. *)
     val set_line_width : t -> float -> unit
-    (** [set_line_width bk w] sets the line width of the backend [bk]
-        to [w].  The line width is expressed in the current backend
-        coordinates (at the time of stroking). *)
+    (** [set_line_width bk w] sets the line width of the backend [bk] to
+        [w].  The line width is expressed in the natural backend
+        coordinates (i.e. when the CTM is the identity). *)
     val set_line_cap : t -> line_cap -> unit
     (** [set_line_cap bk c] sets the line cap for the backend [bk] to [c]. *)
     val set_dash : t -> float -> float array -> unit
@@ -537,19 +554,26 @@ sig
     val path_extents : t -> Matrix.rectangle
 
     val stroke : t -> unit
+    (** [stroke bk] draw the curve described by the current path
+        according to the current line width and color.  *)
     val stroke_preserve : t -> unit
+    (** Same as {!stroke} but make sure the current path is unmodified. *)
     val fill : t -> unit
+    (** [fill bk] draw the curve described by the current path according
+        to the current line width and color.  The current path may be
+        modified.  This is affected by the CTM.  *)
     val fill_preserve : t -> unit
+    (** Same as {!fill} but make sure the current path is unmodified. *)
 
     val stroke_path_preserve : t -> Path.t -> unit
     (** [stroke_path bk p] stroke the abstract path [p], where its
         coordinates are interpreted in the current transformation
-        matrix.  Of course, the current clipping will be obeyed.  After
-        this operation, the current path in [bk] is the transformation
-        of [p].
+        matrix.  Of course, the current clipping, line width and color
+        are be obeyed.  This function may modify the current path in
+        [bk].
 
-        The internal representation of the path is available in
-        [Archimedes_internals.Path]. *)
+        For backend developers: the internal representation of the path
+        is available in [Archimedes_internals.Path]. *)
     val fill_path_preserve : t -> Path.t -> unit
     (** [fill_path_preserve] is similar to [stroke_path_preserve] except
         that it fills the path. *)
@@ -699,8 +723,10 @@ sig
       application must be executed as part of the initialisation code.
       We recommend the use of [let module U = Register(B) in ()] to
       perform the registration.  *)
-
 end
+(*----------------------------------------------------------------------*)
+(** {2 Managing viewports} *)
+
 
 (** Affine systems of coordinates relative to other coordinate systems
     with automatic updates.  The automatic update refers to the fact
@@ -1006,24 +1032,22 @@ sig
   val line_to : t -> x:float -> y:float -> unit
   val rel_move_to : t -> x:float -> y:float -> unit
   val rel_line_to : t -> x:float -> y:float -> unit
-  val curve_to :
-    t ->
-    x1:float ->
-    y1:float -> x2:float -> y2:float -> x3:float -> y3:float -> unit
+  val curve_to : t ->
+    x1:float -> y1:float -> x2:float -> y2:float -> x3:float -> y3:float -> unit
   val rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
   val arc : t -> r:float -> a1:float -> a2:float -> unit
   val close_path : t -> unit
   val clear_path : t -> unit
   (*val path_extents : t -> rectangle*)
-  val stroke_preserve : ?path:Path.t -> t -> coord_name -> unit
+  val stroke_preserve : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
   (** strokes the path (default: viewport's path) on the specified
       coordinate system, doesn't clear the viewport's path if no path
       given *)
-  val stroke : ?path:Path.t -> t -> coord_name -> unit
+  val stroke : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
   (** strokes the path (default: viewport's path) on the specified
       coordinate system, does clear the viewport's path if no path given *)
-  val fill_preserve : ?path:Path.t -> t -> coord_name -> unit
-  val fill : ?path:Path.t -> t -> coord_name -> unit
+  val fill_preserve : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
+  val fill : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
   val clip_rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
   val select_font_face : t -> Backend.slant -> Backend.weight -> string -> unit
   val show_text :
@@ -1036,6 +1060,9 @@ sig
   (** [axes_ratio vp ratio] forces axes to keep [ratio] ([w / h]). *)
   val xrange : t -> float -> float -> unit
   val yrange : t -> float -> float -> unit
+  val xlabel : t -> string -> unit
+  val ylabel : t -> string -> unit
+  val title : t -> string -> unit
 
   val xmin : t -> float
   val xmax : t -> float
@@ -1085,6 +1112,69 @@ sig
   val restore : t -> unit
 
 end
+(*----------------------------------------------------------------------*)
+(** {2 Sampling functions} *)
+
+
+
+(** Adaptative sampling of functions. *)
+module Sampler :
+sig
+
+  type strategy = float -> float -> float
+  (** A strategy is a function [f t1 t2] that returns an internal
+      point tm between t1 and t2 which will be used to decide if we
+      need to increment precision or not. *)
+
+  type cost = float -> float -> float -> float -> float -> float -> float
+  (** A cost [f x0 y0 xm ym x1 y1] which returns the cost measuring how
+      much the three points [(x0, y0)], [(xm, ym)], and [(x1, y1)]
+      differ from a straight line.  A cost of [0.] means one is
+      satisfied with it. *)
+
+  val xy : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
+    (float -> float * float) -> float -> float -> float array * float array
+  (** [create f t1 t2] samples the parametric function f from t1 to t2,
+      returning a list of the points in the sample.
+
+      @param tlog do we need to step in a logarithmic way ?
+
+      @param min_step don't increment precision more than this threshold
+
+      @param n is a maximum number of evaluation of [f] we allow.
+               Default: [100].
+      @param strategy a customized strategy.
+      @param cost a customized cost.
+  *)
+
+  val x : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
+    (float -> float) -> float -> float -> float array * float array
+
+
+  val strategy_midpoint : strategy
+  (** The default strategy: choose the middle point *)
+
+  val strategy_random : strategy
+  (** A strategy that avoids aliasing sampling, but not efficient:
+      chooses randomly a point between t1 and t2 *)
+
+  val strategy_center_random : strategy
+  (** A more efficient strategy that avoids aliasing sampling: chooses
+      randomly a points between t1 and t2 in its 10% center interval *)
+
+
+  val cost_angle : cost
+  (** A criterion that tells to increment precision only if the angle
+      xMy is leather than threshold. *)
+
+  val cost_angle_log : bool -> bool -> cost
+  (** Same criterion as criterion_angle, but one can tell that the x/y
+      axis is logarithmic, and increment precision in a more wise way *)
+
+end
+(*----------------------------------------------------------------------*)
+(** {2 High level functions} *)
+
 
 (** Module handling point styles and marks. *)
 module Pointstyle :
@@ -1182,11 +1272,7 @@ sig
   | Number of int
   | Expnumber of float
   | Expnumber_named of float * string
-  | Custom of (float -> string option) (* TODO no option needed *)
-
-  type tic =
-  | Major of string option * float
-  | Minor of float
+  | Custom of (float -> string)
 
   type t =
   | Fixed of labels * float list
@@ -1194,8 +1280,15 @@ sig
   | Equidistants of labels * float * float * int
   | Auto of labels
 
-  val tics: bool -> float -> float -> t -> tic list
+  type tic =
+  | Major of string * float
+  | Minor of float
 
+  val tics: ?log:bool -> float -> float -> t -> tic list
+  (** [tics xmin xmax spec] return a description of the tics for the
+      interval [xmin .. xmax] according to the specification [spec].
+
+      @param log whether log scales are desired.  Default: [false]. *)
 end
 
 
@@ -1217,7 +1310,7 @@ sig
       should have a value between 0 and 1. Using this kind of
       offset, one can ensure to always get the same rendering *)
 
-  val add_x_axis : ?grid:bool ->
+  val x : ?grid:bool ->
     ?major:(string * float) -> ?minor:(string * float) ->
     ?start:Arrows.style -> ?stop:Arrows.style ->
     ?tics:Tics.t -> ?offset:offset -> Viewport.t -> unit
@@ -1233,7 +1326,7 @@ sig
 
       @param offset where to place the axis (y-coordinate) *)
 
-  val add_y_axis : ?grid:bool ->
+  val y : ?grid:bool ->
     ?major:(string * float) -> ?minor:(string * float) ->
     ?start:Arrows.style -> ?stop:Arrows.style ->
     ?tics:Tics.t -> ?offset:offset -> Viewport.t -> unit
@@ -1268,269 +1361,205 @@ sig
       more information over tics policies) *)
 end
 
+(** {3 Initializing Archimedes} *)
 
-(** Adaptative sampling of functions. *)
-module Sampler :
-sig
+val init : ?lines:float -> ?text:float -> ?marks:float ->
+  ?w:float -> ?h:float -> ?dirs:string list -> string list -> Viewport.t
+(** [init backend] initializes Archimedes and returns the main viewport
+    using the backend specified.  The first element of [backend] is
+    the name (case insensitive) of the underlying engine.  It may be
+    followed by one or several options.  For example, ["Graphics"] for
+    the graphics backend or ["Cairo"; "PNG"; filename] for the Cairo
+    backend, using a PNG surface to be saved to [filename].  The empty
+    list selects ["Graphics"; "hold"].
 
-  type strategy = float -> float -> float
-  (** A strategy is a function [f t1 t2] that returns an internal
-      point tm between t1 and t2 which will be used to decide if we
-      need to increment precision or not. *)
+    @param lines the width of the lines.  Default: [1.] which
+    corresponds to a line width on the backend of [min w h /. 500.].
 
-  type cost = float -> float -> float -> float -> float -> float -> float
-  (** A cost [f x0 y0 xm ym x1 y1] which returns the cost measuring how
-      much the three points [(x0, y0)], [(xm, ym)], and [(x1, y1)]
-      differ from a straight line.  A cost of [0.] means one is
-      satisfied with it. *)
+    @param text the size of the text.  Default: [12.] which
+    corresponds to puting about 42 lines of text in [min w h] height.
 
-  val xy : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
-    (float -> float * float) -> float -> float -> float array * float array
-  (** [create f t1 t2] samples the parametric function f from t1 to t2,
-      returning a list of the points in the sample.
+    @param marks the size of the marks.  Default: [7.] which
+    corresponds packing about 100 marks in [min w h].
 
-      @param tlog do we need to step in a logarithmic way ?
+    @param w the width of the main viewport (in backend's unit)
 
-      @param min_step don't increment precision more than this threshold
+    @param h the height of the main viewport (in backend's unit)
 
-      @param n is a maximum number of evaluation of [f] we allow.
-               Default: [100].
-      @param strategy a customized strategy.
-      @param cost a customized cost.
-  *)
+    @param dirs a list of directories where Archimedes looks for
+    libraries (cma or cmxs) for dynamically loaded backends.  The
+    default is the directory where the backends that come with
+    Archimedes were installed.
+*)
 
-  val x : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
-    (float -> float) -> float -> float -> float array * float array
+val backend_of_filename : string -> string list
+(** Selects a backend according to the filename suffix.  If the suffix
+    is not matched (this in particular for [""]), the graphics backend
+    is selected. *)
+
+val close : Viewport.t -> unit
+
+val set_color : Viewport.t -> Color.t -> unit
+
+(** {3 Plotting various datatypes} *)
+
+(** Style of various plots.  Plotting functions only support the
+    subset of these style that make sense for them.
+
+    - [`Lines] Data points are joined by a simple line.
+    - [`Points] Data points are marked with the mark type given in
+    argument of the Points constructor.
+    - [`Linespoints] Data points are joined by a line and marked with
+    the mark type given in argument.
+    - [`Impulses] Data points are "hit" by lines starting from zero.
+    - [`Boxes w] Data points are the top of a box of custom width [w]
+    which must be given in [Data] coordinates (from 0 to 1).
+*)
+type style =
+[ `Lines
+| `Points of string
+| `Linespoints of string
+| `Impulses
+| `Boxes of float ]
+
+(** Plotting functions. *)
+val fx : Viewport.t -> ?tlog:bool -> ?n:int ->
+  ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
+  ?style:[`Lines | `Linespoints of string | `Points of string ] ->
+  ?base:(float -> float) -> ?fill:bool -> ?fillcolor:Color.t ->
+  (float -> float) -> float -> float -> unit
+(** [fx vp f a b] draws the graph of the function [f] on the interval
+    [[a, b]].
+
+    @param style the style of the plot.  Default: [`Lines].
+    @param fill whether to fill the region between the graph of [f]
+    and the base.  Default: [false].
+    @param fillcolor the color for filling.  Default: {!Color.white_smoke}.
+    @param base the second function for delimiting the filling
+    region.  Default: the identically zero function.
+
+    @param n the maximum number of function evaluations.  Default: [100].
+    @param strategy see {!Sampler.strategy}.
+    @param cost see {!Sampler.cost}. *)
+
+val xyf : Viewport.t -> ?tlog:bool -> ?n:int ->
+  ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
+  ?style:[`Lines | `Linespoints of string | `Points of string ] ->
+  ?fill:bool -> ?fillcolor:Color.t ->
+  (float -> float * float) -> float -> float -> unit
+(** [xyf vp f a b] draws the image of the function [f] on the interval
+    [[a, b]], that is the set of points (x,y) = [f](t) for t in [[a,b]].
+
+    The optional arguments are the same as for {!fx}. *)
 
 
-  val strategy_midpoint : strategy
-  (** The default strategy: choose the middle point *)
+(** Plotting float Arrays. *)
+module Array : sig
+  val y : Viewport.t -> ?base:float array -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:style ->
+    ?const:bool -> float array -> unit
+  (** [y vp yvec] draws the set of points (i, yvec.(i)).
 
-  val strategy_random : strategy
-  (** A strategy that avoids aliasing sampling, but not efficient:
-      chooses randomly a point between t1 and t2 *)
+      @param style the style used for the plot.  The default style is
+      [`Points "O"] which means data points are marked by a small disk.
 
-  val strategy_center_random : strategy
-  (** A more efficient strategy that avoids aliasing sampling: chooses
-      randomly a points between t1 and t2 in its 10% center interval *)
+      @param fill whether to fill the surface between the base and the
+      values [yval].
+      @param fillcolor the filling color (default: {!Color.white_smoke}).
+      @param const whether the input vector [yvec] will not be modified
+      anymore (so there is no need to cache its current values).
 
+      @param base for the styles [`Lines], [`Points], and
+      [`Linespoints], it gives the bottom of the filling zone.  For
+      the styles [`Impulses] and [`Boxes w], it is the Y value above
+      which the boxes (of heights given by [yvec]) are drawn. *)
 
-  val cost_angle : cost
-  (** A criterion that tells to increment precision only if the angle
-      xMy is leather than threshold. *)
+  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    ?const_x:bool -> float array -> ?const_y:bool -> float array -> unit
+  (** [xy cp xvec yvec] draws the set of points (i, yvec.(i)).
+      The optional arguments are similar to {!Array.y}.
 
-  val cost_angle_log : bool -> bool -> cost
-  (** Same criterion as criterion_angle, but one can tell that the x/y
-      axis is logarithmic, and increment precision in a more wise way *)
+      @raise Invalid_argument if [xvec] and [yvec] do not have the same
+      length.*)
 
+  val stack : Viewport.t -> ?colors:Color.t array ->
+    ?fill:bool -> ?fillcolors:Color.t array -> ?style:style ->
+    float array array -> unit
+end
+
+(** Plotting Lists of floats. *)
+module List : sig
+  val y : Viewport.t -> ?base:float list -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:style -> float list -> unit
+  (** See {!Array.y}.  *)
+
+  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    (float * float) list -> unit
+  (** See {!Array.xy}.  *)
+end
+
+(** Plotting Fortran bigarrays. *)
+module Vec : sig
+  open Bigarray
+  type t = (float, float64_elt, fortran_layout) Array1.t
+
+  val y : Viewport.t -> ?base:t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:style ->
+    ?const:bool -> t -> unit
+  (** See {!Array.y}.  *)
+
+  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    ?const_x:bool -> t -> ?const_y:bool -> t -> unit
+  (** See {!Array.xy}.  *)
+
+  val stack : Viewport.t -> ?colors:Color.t array ->
+    ?fill:bool -> ?fillcolors:Color.t array -> ?style:style ->
+    t array -> unit
+  (** See {!Array.stack}.  *)
+end
+
+module CVec : sig
+  open Bigarray
+  type t = (float, float64_elt, c_layout) Array1.t
+
+  val y : Viewport.t -> ?base:t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:style ->
+    ?const:bool -> t -> unit
+  (** See {!Array.y}.  *)
+
+  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+    ?const_x:bool -> t -> ?const_y:bool -> t -> unit
+  (** See {!Array.xy}.  *)
+
+  val stack : Viewport.t -> ?colors:Color.t array ->
+    ?fill:bool -> ?fillcolors:Color.t array -> ?style:style ->
+    t array -> unit
+  (** See {!Array.stack}.  *)
 end
 
 
-(** Iterations on points (internal module). *)
-module Iterator :
-sig
+(*----------------------------------------------------------------------*)
+(** {3 Plotting generic data} *)
 
-  type t
-  (** An iterator, created by a "of_*" function, and manipulated
-      through next, reset, iter and iter_cache (see below) *)
+val y : Viewport.t -> ?base:((float -> unit) -> unit) ->
+  ?fill:bool -> ?fillcolor:Color.t -> ?style:style ->
+  ((float -> unit) -> unit) -> unit
+(** [y vp iter] draws on [vp] the values provided by the iterator [iter].
+    See {!Array.y} for more information. *)
 
-  exception EOI
-  (** End Of Iterator, the exception raised when next is called on a
-      terminated iterator *)
+val xy : Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
+    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+  ((float -> float -> unit) -> unit) -> unit
+(** [xy vp iter] plots on [vp] the values provided by the iterator
+    [iter].
+    See {!Array.xy} for more information. *)
+(*----------------------------------------------------------------------*)
+(** {2 Pie-charts} *)
 
-  val of_list : float list -> t
-  (** [of_list l] Transforms a float list into an iterator which will
-      return values (position in [l], value at that position) *)
-  val of_array : float array -> t
-  (** [of_array a] Transforms a float array into an iterator which will
-      return values (position in [a], value at that position) *)
-  val of_c : (float, Bigarray.float64_elt, Bigarray.c_layout)
-    Bigarray.Array1.t -> t
-  (** [of_c b] Transforms a bigarray with a C layout into an iterator
-      which will return values (position in [b], value at that
-      position) *)
-  val of_fortran : (float, Bigarray.float64_elt, Bigarray.fortran_layout)
-    Bigarray.Array1.t -> t
-  (** [of_fortran b] Transforms a bigarray with a Fortran layout into an
-      iterator which will return values (position in [b], value at that
-      position) *)
-
-  val of_list2 : (float * float) list -> t
-  (** [of_list2 l] Transforms a list of float couples into an iterator
-      returning those couples *)
-  val of_array2 : (float * float) array -> t
-  (** [array_array2 a] Transforms an array of float couples into an
-      iterator returning those couples *)
-  val of_c2 : (float, Bigarray.float64_elt, Bigarray.c_layout)
-    Bigarray.Array2.t -> t
-  (** [of_c2 b] Transforms a bigarray of float couples with a C layout
-      into an iterator returning those couples *)
-  val of_fortran2 : (float, Bigarray.float64_elt, Bigarray.fortran_layout)
-    Bigarray.Array2.t -> t
-  (** [of_fortran2 b] Transforms a bigarray of float couples with a
-      Fortran layout into an iterator returning those couples *)
-
-  val of_last : (float * float -> float * float) -> float * float -> t
-  (** [of_last f start] Create an iterator which creates its next
-      element from the last he has computed using the function [f], starting
-      from [start] *)
-
-  val next : t -> float * float
-  (** [next iter] returns the next value of [iter] *)
-  val reset : t -> unit
-  (** [reset iter] put back [iter] to its initial state *)
-  val iter : (float * float -> unit) -> t -> unit
-  (** [iter f iter] apply the function [f] to all values left in the
-      iterator (the iterator won't be resetted !) *)
-
-  val constant_iterator : float -> t
-  (** [constant_iterator c] Creates an iterator which starts at (0.,
-      [c]) and just increment the x value *)
-  val zero_iterator : unit -> t
-  (** [zero_iterator ()] Alias for (constant_iterator 0.) *)
-
-end
-
-(** Plotting various datatypes. *)
-module Plot :
-sig
-  type pathstyle =
-    | Lines
-    (** Data points are joined by a simple line *)
-    | Points of string
-    (** Data points are marked with the mark type given in argument of
-        the Points constructor *)
-    | Linespoints of string
-    (** Data points are joined by a line and marked with the mark type
-        given in argument *)
-    | Impulses
-    (** Data points are "hit" by lines starting from zero *)
-    | Boxes of float
-    (** Data points are the top of a box of custom width (from 0 to 1) *)
-    | Interval of float
-    (** Data points are represented with a line from a base
-        point. That line is delimited by two small orthogonal lines *)
-
-  val x : ?fill:bool -> ?fillcolor:Color.t -> ?pathstyle:pathstyle ->
-    ?base:Iterator.t -> Viewport.t -> Iterator.t -> unit
-  (** [x vp iter] Plots the values of [iter] on [vp] according to the
-      fact that the x-values of iter are 0, 1, 2, etc. or 1, 2, 3,
-      etc. or 42, 43, 44, etc. or ...
-
-      @param fill fill the region between the iterator and its base ?
-      (default: false)
-
-      @param fillcolor which color to use for the fill
-
-      @param pathstyle which pathstyle to use (see pathstyle type)
-
-      @param base the base iterator is the other delimiter of the region
-      to fill. Default: the zero iterator (giving (0, 0), (1, 0), (2,
-      0), etc.) *)
-
-  val xy : ?fill:bool -> ?fillcolor:Color.t -> ?pathstyle:pathstyle ->
-    Viewport.t -> Iterator.t -> unit
-  (** [xy vp iter] Plots the values of [iter] on [vp] with no
-      constraints over the values of iter.
-
-      @param fill fill the region delimited by the curve ? (default:
-      false)
-
-      @param fillcolor which color to use for the fill
-
-      @param pathstyle which pathstyle to use (see pathstyle type) *)
-
-  val stack : ?colors:(Color.t array) -> ?fillcolors:(Color.t array) ->
-    ?pathstyle:pathstyle -> Viewport.t -> Iterator.t array -> unit
-  (** [stack vp iters] Stacks the iterators [iters] on [vp]; which means
-      that the first iterator is plotted then used as the base for the
-      second iterator, which is plotted and the sum of the two first
-      iterators are used as the base for the third iterator,
-      etc. Usually, the pathstyle used for a stack is Boxes, but one can
-      use another pathstyle if he wants
-
-      @param colors the colors to use for the iterators. If there are
-      more iterators than colors available, a round-robin strategy is
-      used to attribute colors
-
-      @param fillcolors same as colors, but for filling colors
-
-      @param pathstyle which pathstyle to use (see pathstyle type,
-      default is [Boxes 0.5]) *)
-
-  module Function : sig
-    val x : ?tlog:bool -> ?n:int ->
-      ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
-      ?pathstyle:pathstyle -> ?base:(float -> float) ->
-      ?fill:bool -> ?fillcolor:Color.t ->
-      Viewport.t -> (float -> float) -> float -> float -> unit
-
-    val xy : ?tlog:bool -> ?n:int ->
-      ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
-      ?pathstyle:pathstyle -> ?fill:bool -> ?fillcolor:Color.t ->
-      Viewport.t -> (float -> float * float) -> float -> float -> unit
-
-  end
-
-  module type Common = sig
-    (** The Common module type is used by all the "standard" plot modules
-        (Lists, Arrays, Bigarrays) *)
-
-    type data
-    (** The function type, e.g. float list *)
-    type data2
-    (** The curve type, e.g. (float * float) list *)
-
-    val x : ?base:data -> ?fill:bool -> ?fillcolor:Color.t ->
-      ?pathstyle:pathstyle -> Viewport.t -> data -> unit
-    (** Same as the x function of the Plot module, but instead of
-        applying to iterators, it applies to a particular data structure
-        determined by the submodule which is used (Plot.Array,
-        Plot.List, Plot.Fortran or Plot.C) *)
-
-    val xy : ?fill:bool -> ?fillcolor:Color.t -> ?pathstyle:pathstyle ->
-      Viewport.t -> data2 -> unit
-    (** Same as the xy function of the Plot module, but instead of
-        applying to iterators, it applies to a particular data structure
-        determined by the submodule which is used (Plot.Array,
-        Plot.List, Plot.Fortran or Plot.C) *)
-
-    val stack : ?colors:(Color.t array) -> ?fillcolors:(Color.t array) ->
-      ?pathstyle:pathstyle -> Viewport.t -> data array -> unit
-    (** Same as the stack function of the Plot module, but instead of
-        applying to iterators, it applies to a particular data structure
-        determined by the submodule which is used (Plot.Array,
-        Plot.List, Plot.Fortran or Plot.C) *)
-  end
-
-  module Array : sig
-    include Common
-      with type data = float array
-      and type data2 = (float * float) array
-  end
-
-  module List : sig
-    include Common
-      with type data = float list
-      and type data2 = (float * float) list
-  end
-
-  module Fortran : sig
-    open Bigarray
-
-    include Common
-      with type data = (float, float64_elt, fortran_layout) Array1.t
-      and type data2 = (float, float64_elt, fortran_layout) Array2.t
-  end
-
-  module C : sig
-    open Bigarray
-
-    include Common
-      with type data = (float, float64_elt, c_layout) Array1.t
-      and type data2 = (float, float64_elt, c_layout) Array2.t
-  end
-end
 
 module Piechart :
 sig
@@ -1638,50 +1667,3 @@ sig
       simple pie charts *)
 
 end
-
-(** A 2D plotting library with various backends. *)
-
-
-val init : ?lines:float -> ?text:float -> ?marks:float ->
-  ?w:float -> ?h:float -> ?dirs:string list -> string list -> Viewport.t
-(** [init backend] initializes Archimedes and returns a main viewport
-    using the backend specified.  The first element of [backend] is
-    the name (case insensitive) of the underlying engine.  It may be
-    followed by one or several options.  For example, ["Graphics"] for
-    the graphics backend or ["Cairo"; "PNG"; filename] for the Cairo
-    backend, using a PNG surface to be saved to [filename].  The empty
-    list selects the graphics backend.
-
-    @param lines the width of the lines (default: 1. corresponds to
-    filling a biggest square of the viewport with 500 lines)
-
-    @param text the size of the text in (default: 12. corresponds to
-    filling a biggest square of the viewport with about 42 lines of
-    text)
-
-    @param marks the size of the marks in pixels (default:
-    1. corresponds to filling a biggest square the viewport with 100
-    "lines of marks")
-
-    @param w the width of the main viewport (in backend's unit)
-
-    @param h the height of the main viewport (in backend's unit)
-
-    @param dirs a list of directories where Archimedes looks for
-    libraries (cma or cmxs) for dynamically loaded backends.  The
-    default is the directory where the backends that come with
-    Archimedes were installed.
-*)
-
-val backend_of_filename : string -> string list
-(** Selects a backend according to the filename suffix.  If the suffix
-    is not matched (this in particular for [""]), the graphics backend
-    is selected. *)
-
-val close : Viewport.t -> unit
-
-val fx : ?tlog:bool -> ?n:int ->
-  ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
-  ?pathstyle:Plot.pathstyle -> ?base:(float -> float) ->
-  ?fill:bool -> ?fillcolor:Color.t ->
-  Viewport.t -> (float -> float) -> float -> float -> unit
