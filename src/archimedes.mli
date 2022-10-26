@@ -1,7 +1,7 @@
 
 (** A 2D plotting library with various backends.
 
-    @version 0.4
+    @version 0.4.2
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke
@@ -369,18 +369,32 @@ sig
   (** [extents p] returns the path's extents. *)
 
   val move_to: t -> x:float -> y:float -> unit
-  (** [move_to p x y] moves the path's current point to ([x], [y]) *)
+  (** [move_to p x y] moves the path current point to ([x], [y]) if both
+      [x] and [y] are finite.  Otherwise, does nothing.  *)
+
+  val rel_move_to: t -> x:float -> y:float -> unit
+  (** [rel_move_to p x y] shifts the path's current point of [x]
+      horizontally and [y] vertically, provided both [x] and [y] are
+      finite.  Otherwise does nothing. *)
 
   val line_to: t -> x:float -> y:float -> unit
-  (** [line_to p x y] draws a line from the path's current point to ([x],
-      [y]) and sets the current point to ([x], [y]) *)
+  (** [line_to p x y] draws a line from the path's current point to
+      ([x], [y]) and sets the current point to ([x], [y]), provided both
+      [x] and [y] are finite.  Otherwise does nothing. *)
+
+  val rel_line_to: t -> x:float -> y:float -> unit
+  (** [rel_line_to p x y] shifts the path's current point of [x]
+      horizontally and [y] vertically and draws a line between the
+      current and the new point, provided both [x] and [y] are finite.
+      Otherwise does nothing. *)
 
   val line_of_array: t -> ?i0:int -> ?i1:int ->
     ?const_x:bool -> float array -> ?const_y:bool -> float array -> unit
   (** [line_of_array p x y] continue the current line (or start a new
       one) with the line formed by joining the points [x.(i), y.(i)],
       [i=i0,...,i1] (with possibly [i0 > i1] to indicate that the
-      indices must be followed in decreasing order).
+      indices must be followed in decreasing order).  Points with at
+      least one NaN or infinite coordinate are skipped.
 
       @param const_x by setting it to [true], you indicate that you will
       not modify [x] (so it will not be copied).  Default: false.
@@ -403,34 +417,25 @@ sig
   (** Same as {!line_of_array} but for C bigarrays. *)
 
 
-  val rel_move_to: t -> x:float -> y:float -> unit
-  (** [rel_move_to p x y] shifts the path's current point of [x]
-      horizontally and [y] vertically.
-
-      @param rot to consider a rotation of [rot] radians (default: [0.]). *)
-
-  val rel_line_to: t -> x:float -> y:float -> unit
-  (** [rel_line_to p x y] shifts the path's current point of [x]
-      horizontally and [y] vertically and draws a line between the
-      current and the new point.
-
-      @param rot (default: 0.) to consider a rotation of [rot] radians *)
-
   val rectangle: t -> x:float -> y:float -> w:float -> h:float -> unit
-  (** [rectangle p x y w h] draws a rectangle specified by ([x], [y], [w],
-      [h]). *)
+  (** [rectangle p x y w h] draws a rectangle specified by ([x], [y],
+      [w], [h]) if all four quantities [x], [y], [w] and [h] are finite.
+      Does nothing otherwise. *)
 
   val curve_to: t -> x1:float -> y1:float -> x2:float -> y2:float ->
     x3:float -> y3:float -> unit
-  (** [curve_to p x1 y1 x2 y2 x3 y3] draws a cubic Bezier curve using the
-      path's current point as first point (x0, y0) if it is set, else
-      ([x1, y1]).  Sets the path's current point to ([x3], [y3]) *)
+  (** [curve_to p x1 y1 x2 y2 x3 y3] draws a cubic Bezier curve using
+      the path's current point as first point (x0, y0) if it is set,
+      else ([x1, y1]).  Sets the path's current point to ([x3], [y3]).
+      The above holds provided all values [x1], [y1], [x2], [y2], [x3],
+      and [y3] are finite.  The function does nothing otherwise. *)
 
   val arc: t -> r:float -> a1:float -> a2:float -> unit
   (** [arc p r a1 a2] draws an arc starting at the path's current
       point. The starting angle is [a1], the radius [r] and the arc is
       drawn clockwise to the angle [a2]. The angles are given in
-      radians.  *)
+      radians.  The above holds provided the three values [r], [a1], and
+      [a2] are finite.  The function does nothing otherwise.  *)
 
   val close: t -> unit
   (** [close p] Closes the path. It is usually not required to close a
@@ -890,7 +895,7 @@ sig
   type t
   (** Viewport handle. *)
 
-  type coord_name = Device | Graph | Data | Orthonormal
+  type coord_name = [`Device | `Graph | `Data | `Orthonormal]
 
   val get_coord_from_name : t -> coord_name -> Coordinate.t
   (** [get_coord_from_name viewport coord_name] returns one of the
@@ -898,20 +903,26 @@ sig
 
   (** {2 Create new viewports} *)
 
-  val make : ?lines:float -> ?text:float -> ?marks:float ->
-    t -> coord_name -> float -> float -> float -> float ->
-    (t -> float -> float -> unit) -> t
-  (** [make parent coord_name xmin xmax ymin ymax] creates and returns a
-      viewport on top of [parent] with top left corner (xmin, ymin) and
-      bottom right corner (xmax, ymax) using parent's [coord_name]
-      coordinate system.
+  val make : t -> ?lines:float -> ?text:float -> ?marks:float ->
+    ?redim:(t -> float -> float -> unit) ->
+    ?coord:[`Device | `Graph | `Orthonormal] ->
+    float -> float -> float -> float -> t
+  (** [make parent xmin xmax ymin ymax] creates and returns a viewport
+      on top of [parent] with top left corner ([xmin], [ymin]) and
+      bottom right corner ([xmax], [ymax]).
 
       @param lines see {!init}
-
       @param text see {!init}
-
       @param marks see {!init}
+      @param coord the coordinate system in which to interpret [xmin],
+      [xmax], [ymin], and [ymax].  Default: [`Device].
+      @param redim the function to execute when the viewport is
+      redimensioned.  Default: do nothing.
   *)
+
+  val show : t -> unit
+  (** [show vp] forces the viewport [vp] and all its children to
+      immediately display their current content. *)
 
   val get_backend : t -> Backend.t
   (** [get_backend vp] returns the backend associated to [vp], if vp is
@@ -940,9 +951,11 @@ sig
       consists of a xmin and a xmax values, which defines the bounds of
       the viewport in Coordinate data.
 
-      @param x sync the x axis (default: true)
+      @param x sync the x axis (default: false, but true if neither [x] nor
+      [y] are set)
 
-      @param y sync the y axis (default: true)
+      @param y sync the y axis (default: false, but true if neither [x] nor
+      [y] are set)
   *)
 
   val desync_unit_size : ?x:bool -> ?y:bool -> t -> unit
@@ -1025,6 +1038,7 @@ sig
   val set_rel_font_size : t -> float -> unit
   val set_rel_mark_size : t -> float -> unit
   val get_color : t -> Color.t
+  val get_background_color : t -> Color.t
   val get_line_width : t -> float
   val get_font_size : t -> float
   val get_mark_size : t -> float
@@ -1065,16 +1079,28 @@ sig
   val fill : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
   val clip_rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
   val select_font_face : t -> Backend.slant -> Backend.weight -> string -> unit
-  val show_text :
-    t -> coord_name ->
+
+  val text :
+    t -> ?coord:coord_name ->
     ?rotate:float ->
-    x:float -> y:float -> Backend.text_position -> string -> unit
+    float -> float -> ?pos:Backend.text_position -> string -> unit
+  (** [text vp x y s] display the string [s] at position [(x, y)].
+
+      @param coord the coordinate system in which the position [(x,y)]
+      has to be understood.  Default: [Data].
+      @param rotate the angle (in radian) that the text must be rotated.
+      Default: [0.].
+      @param pos the position of the text [s] w.r.t. the position
+      [(x,y)].  Default: centering both horizontally and vertically. *)
+
   val mark : t -> x:float -> y:float -> string -> unit
 
   val axes_ratio : t -> float -> unit
   (** [axes_ratio vp ratio] forces axes to keep [ratio] ([w / h]). *)
   val xrange : t -> float -> float -> unit
+  (** [xrange vp xmin xmax] *)
   val yrange : t -> float -> float -> unit
+  (** [yrange vp ymin ymax] *)
   val xlabel : t -> string -> unit
   val ylabel : t -> string -> unit
   val title : t -> string -> unit
@@ -1112,7 +1138,7 @@ sig
   val restore_direct : t -> unit -> unit
 
 
-  val add_instruction : (unit -> unit) -> t -> unit
+  val add_instruction : t -> (unit -> unit) -> unit
   val do_instructions : t -> unit
 
   val auto_fit : t -> float -> float -> float -> float -> unit
@@ -1418,6 +1444,9 @@ val backend_of_filename : string -> string list
     is not matched (this in particular for [""]), the graphics backend
     is selected. *)
 
+val show : Viewport.t -> unit
+(** Alias for {!Viewport.show}. *)
+
 val close : Viewport.t -> unit
 
 val set_color : Viewport.t -> Color.t -> unit
@@ -1425,6 +1454,12 @@ val set_color : Viewport.t -> Color.t -> unit
 
 val set_line_width : Viewport.t -> float -> unit
 (** Alias for {!Viewport.set_line_width}. *)
+
+val xrange : Viewport.t -> float -> float -> unit
+(** Alias for {!Viewport.xrange}. *)
+
+val yrange : Viewport.t -> float -> float -> unit
+(** Alias for {!Viewport.yrange}. *)
 
 (** {3 Plotting various datatypes} *)
 
@@ -1437,15 +1472,18 @@ val set_line_width : Viewport.t -> float -> unit
     - [`Linespoints] Data points are joined by a line and marked with
     the mark type given in argument.
     - [`Impulses] Data points are "hit" by lines starting from zero.
-    - [`Boxes w] Data points are the top of a box of custom width [w]
+    - [`Bars w] Data points determine the height of a box of width [w]
     which must be given in [Data] coordinates (from 0 to 1).
+    - [`HBars h] Data points determine the width of an horizontal box
+    of height [h] which must be given in [Data] coordinates (from 0 to 1).
 *)
 type style =
 [ `Lines
 | `Points of string
 | `Linespoints of string
 | `Impulses
-| `Boxes of float ]
+| `Bars of float
+| `HBars of float ]
 
 (** Plotting functions. *)
 val fx : Viewport.t -> ?tlog:bool -> ?n:int ->
@@ -1496,11 +1534,12 @@ module Array : sig
 
       @param base for the styles [`Lines], [`Points], and
       [`Linespoints], it gives the bottom of the filling zone.  For
-      the styles [`Impulses] and [`Boxes w], it is the Y value above
-      which the boxes (of heights given by [yvec]) are drawn. *)
+      the styles [`Impulses] and [`Bars w], it is the Y value above
+      which the boxes (of heights given by [yvec]) are drawn.  For the
+      style [`HBars], it is the (signed) distance to the Y axis at
+      which the horizontal bar starts. *)
 
-  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t -> ?style:style ->
     ?const_x:bool -> float array -> ?const_y:bool -> float array -> unit
   (** [xy cp xvec yvec] draws the set of points (i, yvec.(i)).
       The optional arguments are similar to {!Array.y}.
@@ -1546,8 +1585,7 @@ module Vec : sig
     ?const:bool -> t -> unit
   (** See {!Array.y}.  *)
 
-  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t -> ?style:style ->
     ?const_x:bool -> t -> ?const_y:bool -> t -> unit
   (** See {!Array.xy}.  *)
 
@@ -1567,8 +1605,7 @@ module CVec : sig
     ?const:bool -> t -> unit
   (** See {!Array.y}.  *)
 
-  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t ->
-    ?style:[`Lines | `Points of string | `Linespoints of string ] ->
+  val xy: Viewport.t -> ?fill:bool -> ?fillcolor:Color.t -> ?style:style ->
     ?const_x:bool -> t -> ?const_y:bool -> t -> unit
   (** See {!Array.xy}.  *)
 

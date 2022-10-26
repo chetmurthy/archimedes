@@ -1,7 +1,7 @@
 #								-*-conf-*-
 OASISFormat: 0.2
 Name:        archimedes
-Version:     0.4.1
+Version:     0.4.2
 Synopsis:    Extensible 2D plotting library.
 Description: Archimedes is a high quality, platform-independent,
   extensible 2D plotting library.  It provides dynamically loaded
@@ -9,7 +9,7 @@ Description: Archimedes is a high quality, platform-independent,
 Authors:     Christophe Troestler <Christophe.Troestler@umons.ac.be>,
   Pierre Hauweele <antegallya@gmail.com>,
   Fabian Pijcke <fabian.pijcke@gmail.com>,
-  Noémie Meunier <noemie_6462@hotmail.com>,
+  NoÃ©mie Meunier <noemie_6462@hotmail.com>,
   Bertrand Desmons <bibi-6@hotmail.fr>
 License:     LGPL-3.0 with OCaml linking exception
 Homepage:    http://forge.ocamlcore.org/projects/archimedes/
@@ -120,6 +120,41 @@ Executable "pkg_chart"
   Path:	        examples/
   BuildTools:   ocamlbuild
   MainIs:       pkg_chart.ml
+  BuildDepends: archimedes
+  Install:      false
+
+Executable "anscombe"
+  Path:	        examples/
+  BuildTools:   ocamlbuild
+  MainIs:       anscombe.ml
+  BuildDepends: archimedes
+  Install:      false
+
+Executable "scatter_hist"
+  Path:	        examples/
+  BuildTools:   ocamlbuild
+  MainIs:       scatter_hist.ml
+  BuildDepends: archimedes
+  Install:      false
+
+Executable "coords_report.ml"
+  Path:	        examples/
+  BuildTools:   ocamlbuild
+  MainIs:       coords_report.ml
+  BuildDepends: archimedes
+  Install:      false
+
+Executable "taylor.ml"
+  Path:	        examples/
+  BuildTools:   ocamlbuild
+  MainIs:       taylor.ml
+  BuildDepends: archimedes
+  Install:      false
+
+Executable "spiral.ml"
+  Path:	        examples/
+  BuildTools:   ocamlbuild
+  MainIs:       spiral.ml
   BuildDepends: archimedes
   Install:      false
 

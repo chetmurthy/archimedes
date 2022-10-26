@@ -27,7 +27,8 @@ type style =
 | `Points of string
 | `Linespoints of string
 | `Impulses
-| `Boxes of float ]
+| `Bars of float
+| `HBars of float ]
 
 let default_fillcolor = Color.white_smoke
 
@@ -244,11 +245,11 @@ let fx vp ?tlog ?n ?strategy ?cost ?(style=`Lines) ?base
     V.set_color vp fillcolor;
     (* Do not fit on its extents, because we don't want to fit
        [base]. *)
-    V.fill ~path:path_fill ~fit:false vp V.Data;
+    V.fill ~path:path_fill ~fit:false vp `Data;
     V.set_color vp color;
   );
   (match style with
-  | `Lines | `Linespoints _ -> V.stroke ~path vp V.Data
+  | `Lines | `Linespoints _ -> V.stroke ~path vp `Data
   | `Points _ -> ()); (* Do not usually make sense but convenient
                         so see which data points where chosen. *)
   PlotArray.draw_marks vp style x y (Array.length x)

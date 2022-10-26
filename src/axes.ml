@@ -47,11 +47,12 @@ let arrow_offset xrange arrow =
   else xrange *. 0.03 (* FIXME: we should use arrow extends. *)
 
 let grid_style vp =
+  let br, bg, bb = Color.get_rgb(V.get_background_color vp) in
   let color = V.get_color vp in
   let r, g, b = Color.get_rgb color in
-  let r' = 1. -. (1. -. r) /. 4.
-  and g' = 1. -. (1. -. g) /. 4.
-  and b' = 1. -. (1. -. b) /. 4. in
+  let r' = 0.75 *. br +. 0.25 *. r
+  and g' = 0.75 *. bg +. 0.25 *. g
+  and b' = 0.75 *. bb +. 0.25 *. b in
   let color' = Color.rgb r' g' b' in
   V.set_color_direct vp color' ();
   (* Return a restore function *)
@@ -60,7 +61,7 @@ let grid_style vp =
   in
   restore
 
-let draw_x_axis grid major minor start stop tics offset vp () =
+let draw_x_axis grid major minor start stop tics offset vp =
   let xrange = V.xmax vp -. V.xmin vp
   and yrange = V.ymax vp -. V.ymin vp in
   let x1 = V.xmin vp -. arrow_offset xrange start
@@ -70,25 +71,25 @@ let draw_x_axis grid major minor start stop tics offset vp () =
   Arrows.line_direct ~head:stop ~tail:start vp x1 offset x2 offset ();
   let tic x = tic vp x offset in
   let text x lbl =
-    let x, y = V.ortho_from vp V.Data (x, offset) in
+    let x, y = V.ortho_from vp `Data (x, offset) in
     let y = y +. 0.02 *. dir in
     let align = if dir < 0. then Backend.CB else Backend.CT in
-    V.show_text_direct vp V.Orthonormal ~x ~y align lbl () in
-  let grid_line = function
-    | Tics.Major (_, x) -> let path = Path.make() in
-                          Path.move_to path x (V.ymin vp);
-                          Path.line_to path x (V.ymax vp);
-                          V.stroke_direct vp ~path V.Data ()
-    | Tics.Minor _ -> ()
-  in
+    V.show_text_direct vp `Orthonormal ~x ~y align lbl () in
   if grid then begin
+    let grid_line = function
+      | Tics.Major (_, x) -> let path = Path.make() in
+                            Path.move_to path x (V.ymin vp);
+                            Path.line_to path x (V.ymax vp);
+                            V.stroke_direct vp ~path `Data ()
+      | Tics.Minor _ -> ()
+    in
     let restore = grid_style vp in
     List.iter grid_line tics_values;
     restore vp
   end;
   List.iter (draw_tic tic major minor text) tics_values
 
-let draw_y_axis grid major minor start stop tics offset vp () =
+let draw_y_axis grid major minor start stop tics offset vp =
   let xrange = V.xmax vp -. V.xmin vp
   and yrange = V.ymax vp -. V.ymin vp in
   let y1 = V.ymin vp -. arrow_offset yrange start
@@ -98,15 +99,15 @@ let draw_y_axis grid major minor start stop tics offset vp () =
   Arrows.line_direct ~head:stop ~tail:start vp offset y1 offset y2 ();
   let tic y = tic vp offset y in
   let text y lbl =
-    let x, y = V.ortho_from vp V.Data (offset, y) in
+    let x, y = V.ortho_from vp `Data (offset, y) in
     let x = x +. 0.02 *. dir in
     let align = if dir < 0. then Backend.LC else Backend.RC in
-    V.show_text_direct vp V.Orthonormal ~x ~y align lbl () in
+    V.show_text_direct vp `Orthonormal ~x ~y align lbl () in
   let grid_line = function
     | Tics.Major (_, y) -> let path = Path.make() in
                           Path.move_to path (V.xmin vp) y;
                           Path.line_to path (V.xmax vp) y;
-                          V.stroke_direct vp ~path V.Data ()
+                          V.stroke_direct vp ~path `Data ()
     | Tics.Minor _ -> ()
   in
   if grid then begin
@@ -121,9 +122,9 @@ let x ?(grid=false)
     ?(start=Arrows.Unstyled) ?(stop=Arrows.Unstyled)
     ?(tics=Tics.Auto (Tics.Number 5)) ?(offset=Absolute 0.) vp =
   V.save vp;
-  V.add_instruction
-    (draw_x_axis grid major minor start stop tics offset vp) vp;
-  V.add_instruction (fun () -> Backend.show(V.get_backend vp)) vp;
+  V.add_instruction vp (fun () ->
+    draw_x_axis grid major minor start stop tics offset vp;
+    Backend.show(V.get_backend vp));
   V.restore vp
 
 let y ?(grid=false)
@@ -131,9 +132,9 @@ let y ?(grid=false)
     ?(start=Arrows.Unstyled) ?(stop=Arrows.Unstyled)
     ?(tics=Tics.Auto (Tics.Number 5)) ?(offset=Absolute 0.) vp =
   V.save vp;
-  V.add_instruction
-    (draw_y_axis grid major minor start stop tics offset vp) vp;
-  V.add_instruction (fun () -> Backend.show(V.get_backend vp)) vp;
+  V.add_instruction vp (fun () ->
+    draw_y_axis grid major minor start stop tics offset vp;
+    Backend.show(V.get_backend vp));
   V.restore vp
 
 

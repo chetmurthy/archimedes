@@ -24,7 +24,7 @@
 type t
 (** Viewport handle. *)
 
-type coord_name = Device | Graph | Data | Orthonormal
+type coord_name = [`Device | `Graph | `Data | `Orthonormal]
 
 val get_coord_from_name : t -> coord_name -> Coordinate.t
 (** [get_coord_from_name viewport coord_name] returns one of the
@@ -32,20 +32,26 @@ val get_coord_from_name : t -> coord_name -> Coordinate.t
 
 (** {2 Create new viewports} *)
 
-val make : ?lines:float -> ?text:float -> ?marks:float ->
-  t -> coord_name -> float -> float -> float -> float ->
-  (t -> float -> float -> unit) -> t
-(** [make parent coord_name xmin xmax ymin ymax] creates and returns a
-    viewport on top of [parent] with top left corner (xmin, ymin) and
-    bottom right corner (xmax, ymax) using parent's [coord_name]
-    coordinate system.
+val make : t -> ?lines:float -> ?text:float -> ?marks:float ->
+  ?redim:(t -> float -> float -> unit) ->
+  ?coord:[`Device | `Graph | `Orthonormal] ->
+  float -> float -> float -> float -> t
+(** [make parent xmin xmax ymin ymax] creates and returns a viewport
+    on top of [parent] with top left corner ([xmin], [ymin]) and
+    bottom right corner ([xmax], [ymax]).
 
     @param lines see {!init}
-
     @param text see {!init}
-
     @param marks see {!init}
+    @param coord the coordinate system in which to interpret [xmin],
+    [xmax], [ymin], and [ymax].  Default: [`Device].
+    @param redim the function to execute when the viewport is
+    redimensioned.  Default: do nothing.
 *)
+
+val show : t -> unit
+(** [show vp] forces the viewport [vp] and all its children to
+    immediately display their current content. *)
 
 val get_backend : t -> Backend.t
 (** [get_backend vp] returns the backend associated to [vp], if vp is
@@ -74,9 +80,11 @@ val sync_range : ?x:bool -> ?y:bool -> t -> t -> unit
     consists of a xmin and a xmax values, which defines the bounds of
     the viewport in Coordinate data.
 
-    @param x sync the x axis (default: true)
+    @param x sync the x axis (default: false, but true if neither [x] nor
+    [y] are set)
 
-    @param y sync the y axis (default: true)
+    @param y sync the y axis (default: false, but true if neither [x] nor
+    [y] are set)
 *)
 
 val desync_unit_size : ?x:bool -> ?y:bool -> t -> unit
@@ -160,6 +168,7 @@ val set_rel_line_width : t -> float -> unit
 val set_rel_font_size : t -> float -> unit
 val set_rel_mark_size : t -> float -> unit
 val get_color : t -> Color.t
+val get_background_color : t -> Color.t
 val get_line_width : t -> float
 val get_font_size : t -> float
 val get_mark_size : t -> float
@@ -204,10 +213,20 @@ val clip_rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
 (*    val save_vp : t -> unit
       val restore_vp : t -> unit*)
 val select_font_face : t -> Backend.slant -> Backend.weight -> string -> unit
-val show_text :
-  t -> coord_name ->
+
+val text :
+  t -> ?coord:coord_name ->
   ?rotate:float ->
-  x:float -> y:float -> Backend.text_position -> string -> unit
+  float -> float -> ?pos:Backend.text_position -> string -> unit
+(** [text vp x y s] display the string [s] at position [(x, y)].
+
+    @param coord the coordinate system in which the position [(x,y)]
+    has to be understood.  Default: [Data].
+    @param rotate the angle (in radian) that the text must be rotated.
+    Default: [0.].
+    @param pos the position of the text [s] w.r.t. the position
+    [(x,y)].  Default: centering both horizontally and vertically. *)
+
 (*  val text_extents : t -> string -> rectangle*)
 val mark : t -> x:float -> y:float -> string -> unit
 (* val mark_extents : t -> string -> rectangle *)
@@ -215,7 +234,9 @@ val mark : t -> x:float -> y:float -> string -> unit
 val axes_ratio : t -> float -> unit
 (** [axes_ratio vp ratio] forces axes to keep [ratio] ([w / h]). *)
 val xrange : t -> float -> float -> unit
+(** [xrange vp xmin xmax] *)
 val yrange : t -> float -> float -> unit
+(** [yrange vp ymin ymax] *)
 val xlabel : t -> string -> unit
 val ylabel : t -> string -> unit
 val title : t -> string -> unit
@@ -253,7 +274,7 @@ val save_direct : t -> unit -> unit
 val restore_direct : t -> unit -> unit
 
 
-val add_instruction : (unit -> unit) -> t -> unit
+val add_instruction : t -> (unit -> unit) -> unit
 val do_instructions : t -> unit
 
 val auto_fit : t -> float -> float -> float -> float -> unit

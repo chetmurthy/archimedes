@@ -18,9 +18,7 @@
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the file
    LICENSE for more details. *)
 
-let is_inf x = 1. /. x = 0.
-
-let is_nan x = x <> x
+open Utils
 
 module rec Axes : sig
   type sign = Positive | Negative
@@ -192,13 +190,16 @@ and Viewport : sig
     mutable clip: bool;
     mutable saves: save_data list;
   }
-  type coord_name = Device | Graph | Data | Orthonormal
+  type coord_name = [`Device | `Graph | `Data | `Orthonormal]
   val get_coord_from_name : t -> coord_name -> Coordinate.t
   val init : ?lines:float -> ?text:float -> ?marks:float ->
     ?bg:Color.t -> ?w:float -> ?h:float -> ?dirs:string list -> string list -> t
-  val make : ?lines:float -> ?text:float -> ?marks:float ->
-    t -> coord_name -> float -> float -> float -> float ->
-    (t -> float -> float -> unit) -> t
+  val make : t -> ?lines:float -> ?text:float -> ?marks:float ->
+    ?redim:(t -> float -> float -> unit) ->
+    ?coord:[`Device | `Graph | `Orthonormal] ->
+    float -> float -> float -> float -> t
+
+  val show : t -> unit
 
   val get_backend : t -> Backend.t
 
@@ -243,6 +244,7 @@ and Viewport : sig
   val set_global_line_join : t -> Backend.line_join -> unit
     (*  val set_global_line_width : t -> float -> unit*)
   val get_color : t -> Color.t
+  val get_background_color : t -> Color.t
   val get_line_cap : t -> Backend.line_cap
   val get_dash : t -> float array * float
   val get_line_join : t -> Backend.line_join
@@ -267,11 +269,11 @@ and Viewport : sig
     (*  val save_vp : t -> unit
         val restore_vp : t -> unit*)
   val select_font_face : t -> Backend.slant -> Backend.weight -> string -> unit
-  val show_text :
-    t -> coord_name ->
+  val text :
+    t -> ?coord:coord_name ->
     ?rotate:float ->
-    x:float -> y:float -> Backend.text_position -> string -> unit
-    (*  val text_extents : t -> string -> rectangle*)
+    float -> float -> ?pos:Backend.text_position -> string -> unit
+  (*  val text_extents : t -> string -> rectangle*)
   val ortho_from : t -> coord_name -> float * float -> float * float
   val data_from : t -> coord_name -> float * float -> float * float
   val mark : t -> x:float -> y:float -> string -> unit
@@ -318,7 +320,7 @@ and Viewport : sig
   val ylog : t -> bool
   val close : t -> unit
 
-  val add_instruction : (unit -> unit) -> t -> unit
+  val add_instruction : t -> (unit -> unit) -> unit
   val do_instructions : t -> unit
 
   val auto_fit : t -> float -> float -> float -> float -> unit
@@ -387,7 +389,7 @@ end = struct
     mutable saves: save_data list;
   }
 
-  type coord_name = Device | Graph | Data | Orthonormal
+  type coord_name = [`Device | `Graph | `Data | `Orthonormal]
 
   (* Multiplier to get "user-friendly" values (e.g. 12pt instead of 0.024) *)
   let usr_lw, usr_ts, usr_ms = 500., 500., 100.
@@ -407,10 +409,10 @@ end = struct
   let ymax vp = vp.axes_system.Axes.y.Axes.gxend
 
   let get_coord_from_name vp = function
-    | Device -> vp.coord_device
-    | Graph -> vp.coord_graph
-    | Data -> vp.coord_data
-    | Orthonormal -> vp.coord_orthonormal
+    | `Device -> vp.coord_device
+    | `Graph -> vp.coord_graph
+    | `Data -> vp.coord_data
+    | `Orthonormal -> vp.coord_orthonormal
 
   let to_parent coord (x, y) = Coordinate.to_parent coord ~x ~y
   let from_parent coord (x, y) = Coordinate.from_parent coord ~x ~y
@@ -425,14 +427,14 @@ end = struct
     (axis_norm_log axes_system.Axes.x x, axis_norm_log axes_system.Axes.y y)
 
   let rec ortho_from vp coord_name pos = match coord_name with
-    | Device ->
-        ortho_from vp Orthonormal (from_parent vp.coord_orthonormal pos)
-    | Graph ->
-        ortho_from vp Device (to_parent vp.coord_graph pos)
-    | Data ->
+    | `Device ->
+        ortho_from vp `Orthonormal (from_parent vp.coord_orthonormal pos)
+    | `Graph ->
+        ortho_from vp `Device (to_parent vp.coord_graph pos)
+    | `Data ->
         let pos = data_norm_log vp.axes_system pos in
-        ortho_from vp Graph (to_parent vp.coord_data pos)
-    | Orthonormal ->
+        ortho_from vp `Graph (to_parent vp.coord_data pos)
+    | `Orthonormal ->
         pos
 
   let data_unnorm_log axes_system (x, y) =
@@ -446,19 +448,19 @@ end = struct
      axis_unnorm_log axes_system.Axes.y y)
 
   let rec data_from vp coord_name pos = match coord_name with
-    | Device -> data_from vp Graph (from_parent vp.coord_graph pos)
-    | Graph ->
+    | `Device -> data_from vp `Graph (from_parent vp.coord_graph pos)
+    | `Graph ->
         let pos = data_unnorm_log vp.axes_system pos in
         from_parent vp.coord_data pos
-    | Data -> pos
-    | Orthonormal -> data_from vp Device (to_parent vp.coord_orthonormal pos)
+    | `Data -> pos
+    | `Orthonormal -> data_from vp `Device (to_parent vp.coord_orthonormal pos)
 
   let get_path ?(notransform=false) vp p coord_name =
     let p = match p with
       | None -> vp.path
       | Some p -> p
     in
-    if coord_name = Data && not notransform &&
+    if coord_name = `Data && not notransform &&
       (vp.axes_system.Axes.x.Axes.log || vp.axes_system.Axes.y.Axes.log) then
       Path.map p (data_norm_log vp.axes_system)
     else p
@@ -467,6 +469,7 @@ end = struct
   let merge l1 l2 =
     let l2' = List.filter (fun x -> not (List.exists (( == ) x) l1)) l2 in
     List.rev_append l1 l2'
+
 
 (* Primitives
  ***********************************************************************)
@@ -508,13 +511,13 @@ end = struct
   let apply_clip vp coord_name =
     if vp.clip then (
       match coord_name with
-      | Data ->
+      | `Data ->
         let x = xmin vp and y = ymin vp in
         Backend.clip_rectangle vp.backend x y (xmax vp -. x) (ymax vp -. y);
-      | Orthonormal ->
-        let maxx, maxy = ortho_from vp Device (1., 1.) in
+      | `Orthonormal ->
+        let maxx, maxy = ortho_from vp `Device (1., 1.) in
         Backend.clip_rectangle vp.backend 0. 0. maxx maxy
-      | Device | Graph ->
+      | `Device | `Graph ->
         Backend.clip_rectangle vp.backend 0. 0. 1. 1.
     )
 
@@ -550,7 +553,7 @@ end = struct
 
   let orthoinstr_direct vp ~x ~y f =
     let ms = vp.mark_size /. vp.square_side in
-    let x, y = ortho_from vp Data (x, y) in
+    let x, y = ortho_from vp `Data (x, y) in
     (* FIXME: the idea of coordinate system is that we create them
        and use/update them, not that we create new ones all the time. *)
     let coord = Coordinate.make_translate vp.coord_orthonormal
@@ -606,7 +609,7 @@ end = struct
     Backend.restore vp.backend;
     Coordinate.restore vp.backend ctm
 
-  let add_instruction f vp = Queue.push f vp.instructions
+  let add_instruction vp f = Queue.push f vp.instructions
 
   (* Note: if a vp is synchronized with one of its children, this children
      will be redrawn two times. *)
@@ -616,12 +619,16 @@ end = struct
     Queue.iter (fun f -> f ()) vp.instructions;
     List.iter do_instructions (List.rev vp.children)
 
-  let save vp = add_instruction (save_direct vp) vp
-  let restore vp = add_instruction (restore_direct vp) vp
+  let save vp = add_instruction vp (save_direct vp)
+  let restore vp = add_instruction vp (restore_direct vp)
+
+  let show vp =
+    do_instructions vp; (* => also for children *)
+    Backend.show vp.backend
 
   let close vp =
     let parent = vp.parent in
-    parent.children <- List.filter (fun x -> not (x == vp)) parent.children;
+    parent.children <- List.filter (fun x -> x != vp) parent.children;
     if vp == parent then begin
       do_instructions vp;
       Backend.close vp.backend
@@ -633,27 +640,27 @@ end = struct
 
   let set_line_width vp lw =
     vp.line_width <- lw;
-    add_instruction (set_line_width_direct vp lw) vp
+    add_instruction vp (set_line_width_direct vp lw)
 
   let set_font_size vp ts =
     vp.font_size <- ts;
-    add_instruction (set_font_size_direct vp ts) vp
+    add_instruction vp (set_font_size_direct vp ts)
 
   let set_mark_size vp ms =
     vp.mark_size <- ms;
-    add_instruction (set_mark_size_direct vp ms) vp
+    add_instruction vp (set_mark_size_direct vp ms)
 
   let set_rel_line_width vp lw =
     vp.line_width <- (lw /. usr_lw *. vp.square_side);
-    add_instruction (set_rel_line_width_direct vp lw) vp
+    add_instruction vp (set_rel_line_width_direct vp lw)
 
   let set_rel_font_size vp ts =
     vp.font_size <- (ts /. usr_ts *. vp.square_side);
-    add_instruction (set_rel_font_size_direct vp ts) vp
+    add_instruction vp (set_rel_font_size_direct vp ts)
 
   let set_rel_mark_size vp ms =
     vp.mark_size <- (ms /. usr_ms *. vp.square_side);
-    add_instruction (set_rel_mark_size_direct vp ms) vp
+    add_instruction vp (set_rel_mark_size_direct vp ms)
 
   let get_line_width vp = vp.line_width
   let get_font_size vp = vp.font_size
@@ -678,16 +685,16 @@ end = struct
 
   let set_color vp c =
     vp.color <- c;  (* one may query the viewport! *)
-    add_instruction (set_color_direct vp c) vp
+    add_instruction vp (set_color_direct vp c)
 
   let set_global_line_cap vp lc =
-    add_instruction (set_line_cap_direct vp lc) vp
+    add_instruction vp (set_line_cap_direct vp lc)
 
   let set_global_dash vp x y =
-    add_instruction (set_dash_direct vp x y) vp
+    add_instruction vp (set_dash_direct vp x y)
 
   let set_global_line_join vp join =
-    add_instruction (set_line_join_direct vp join) vp
+    add_instruction vp (set_line_join_direct vp join)
 
   (* FIXME: a field in viewport should be added as for line_width... *)
   let get_line_cap vp = Backend.get_line_cap vp.backend
@@ -695,7 +702,7 @@ end = struct
   let get_line_join vp = Backend.get_line_join vp.backend
 
   let get_color vp = vp.color
-
+  let get_background_color vp = vp.bg_color
 
 (* Initialization functions
  ***********************************************************************)
@@ -762,12 +769,12 @@ end = struct
     set_line_join viewport def_line_join;*)
     viewport
 
-  let make ?(lines=def_lw) ?(text=def_ts) ?(marks=def_ms)
-      vp coord_name xmin xmax ymin ymax redim =
-    if coord_name = Data then
-      invalid_arg "Archimedes.Viewport.make: \
-                   can't make a subviewport in Data coordinates.";
-    let coord_parent = get_coord_from_name vp coord_name in
+  let do_nothing_when_redim _ _ _ = ()
+
+  let make vp ?(lines=def_lw) ?(text=def_ts) ?(marks=def_ms)
+      ?(redim=do_nothing_when_redim)
+      ?(coord=`Device) xmin xmax ymin ymax =
+    let coord_parent = get_coord_from_name vp coord in
     let w, h, size0 =
       (* We can't be sure of the y orientation, so we them in absolute *)
       let xmax', y2' = Coordinate.to_device coord_parent xmax ymax
@@ -919,18 +926,18 @@ end = struct
     assert (not (is_nan yrange.Axes.data_x0));
     assert (not (is_nan yrange.Axes.data_xend));
     (* Update data ranges. *)
-    if xrange.Axes.auto_x0 && not (is_inf x0') then
-      if is_inf xrange.Axes.data_x0 || x0' < xrange.Axes.data_x0 then
-        (xrange.Axes.data_x0 <- x0'; xupdated := true);
-    if xrange.Axes.auto_xend && not (is_inf x1') then
-      if is_inf xrange.Axes.data_xend || x1' > xrange.Axes.data_xend then
-        (xrange.Axes.data_xend <- x1'; xupdated := true);
-    if yrange.Axes.auto_x0 && not (is_inf y0') then
-      if is_inf yrange.Axes.data_x0 || y0' < yrange.Axes.data_x0 then
-        (yrange.Axes.data_x0 <- y0'; yupdated := true);
-    if yrange.Axes.auto_xend && not (is_inf y1') then
-      if is_inf yrange.Axes.data_xend || y1' > yrange.Axes.data_xend then
-        (yrange.Axes.data_xend <- y1'; yupdated := true);
+    if xrange.Axes.auto_x0 && is_finite x0'
+      && (is_inf xrange.Axes.data_x0 || x0' < xrange.Axes.data_x0) then
+      (xrange.Axes.data_x0 <- x0'; xupdated := true);
+    if xrange.Axes.auto_xend && is_finite x1'
+      && (is_inf xrange.Axes.data_xend || x1' > xrange.Axes.data_xend) then
+      (xrange.Axes.data_xend <- x1'; xupdated := true);
+    if yrange.Axes.auto_x0 && is_finite y0'
+      && (is_inf yrange.Axes.data_x0 || y0' < yrange.Axes.data_x0) then
+      (yrange.Axes.data_x0 <- y0'; yupdated := true);
+    if yrange.Axes.auto_xend && is_finite y1'
+      && (is_inf yrange.Axes.data_xend || y1' > yrange.Axes.data_xend) then
+      (yrange.Axes.data_xend <- y1'; yupdated := true);
     (* Update x0, xend ranges, unit_size and gx0, gxend and redraw... *)
     update_axes_ranges vp !xupdated !yupdated
 
@@ -965,14 +972,14 @@ end = struct
   (* FIXME: poor implementations.  The label should be stored and used
      to determine the space for the graphic. *)
   let xlabel_direct vp s =
-    show_text_direct vp Device ~x:0.5 ~y:0.01 Backend.CT s
+    show_text_direct vp `Device ~x:0.5 ~y:0.01 Backend.CT s
 
   let ylabel_direct vp s =
-    show_text_direct vp Device ~x:0.01 ~y:0.5 Backend.RC s
+    show_text_direct vp `Device ~x:0.01 ~y:0.5 Backend.RC s
       ~rotate:1.57079632679489656 (* pi / 2 *)
 
   let title_direct vp s =
-    show_text_direct vp Device ~x:0.5 ~y:0.99 Backend.CB s
+    show_text_direct vp `Device ~x:0.5 ~y:0.99 Backend.CB s
 
 
 (* Synchronization
@@ -1008,7 +1015,13 @@ end = struct
     if y then desync_range_axis vp vp.axes_system.Axes.y;
     if x || y then update_axes_system vp
 
-  let sync_range ?(x=true) ?(y=true) vp vp_base =
+  let sync_range ?x ?y vp vp_base =
+    let x, y = match x, y with
+      | None, None -> true, true
+      | Some x, None -> x, false
+      | None, Some y -> false, y
+      | Some x, Some y -> x, y
+    in
     let sync_axis_range sync_axis axis axis_base =
       let base_range = axis_base.Axes.range in
       if sync_axis then begin
@@ -1071,8 +1084,6 @@ end = struct
 (* Layouts
  ***********************************************************************)
 
-  let do_nothing_when_redim _ _ _ = ()
-
   (* Uniform grid; redim: identity *)
   let gen_grid vp nx ny ~cols_sync_x ~cols_sync_y ~rows_sync_x ~rows_sync_y
       set get =
@@ -1083,7 +1094,7 @@ end = struct
         and ymin = float y *. ystep in
         let xmax = xmin +. xstep
         and ymax = ymin +. ystep in
-        set x y (make vp Device xmin xmax ymin ymax do_nothing_when_redim);
+        set x y (make vp xmin xmax ymin ymax);
         if y > 0 then
           sync ~x:cols_sync_x ~y:cols_sync_y (get x y) (get x 0);
         if x > 0 then
@@ -1121,8 +1132,7 @@ end = struct
       let coord = vp.coord_device in
       Coordinate.scale coord (1. /. xfactor) 1.;
     end in
-    let vp_fixed =
-      make vp Device 0. init_prop 0. 1. redim_fixed in
+    let vp_fixed = make vp 0. init_prop 0. 1. ~redim:redim_fixed in
     let redim vp xfactor _ = begin
       let coord = vp.coord_device in
       Coordinate.scale coord (1. /. xfactor) 1.;
@@ -1131,7 +1141,7 @@ end = struct
       let vp_left, _ = Coordinate.to_parent vp.coord_device ~x:0. ~y:0. in
       Coordinate.translate coord (vp_left -. fixed_right) 0.
     end in
-    let vp' = make vp Device init_prop 1. 0. 1. redim in
+    let vp' = make vp init_prop 1. 0. 1. ~redim in
     (vp_fixed, vp')
 
   let fixed_right init_prop vp =
@@ -1141,13 +1151,12 @@ end = struct
       Coordinate.translate
         coord (-. (fst (Coordinate.to_parent coord ~x:1. ~y:0.))) 0.
     end in
-    let vp_fixed =
-      make vp Device init_prop 1. 0. 1. redim_fixed in
+    let vp_fixed = make vp init_prop 1. 0. 1. ~redim:redim_fixed in
     let redim vp xfactor _ = begin
       let coord = vp.coord_device in
       Coordinate.scale coord (1. /. xfactor) 1.
     end in
-    let vp' = make vp Device 0. init_prop 0. 1. redim in
+    let vp' = make vp 0. init_prop 0. 1. ~redim in
     (vp_fixed, vp')
 
   let fixed_top init_prop vp =
@@ -1155,8 +1164,7 @@ end = struct
       let coord = vp.coord_device in
       Coordinate.scale coord 1. (1. /. yfactor);
     end in
-    let vp_fixed =
-      make vp Device 0. 1. (1. -. init_prop) 1. redim_fixed
+    let vp_fixed = make vp 0. 1. (1. -. init_prop) 1. ~redim:redim_fixed
     in
     let rec redim vp _ yfactor = begin
       let coord = vp.coord_device in
@@ -1166,7 +1174,7 @@ end = struct
       let _, vp_top = Coordinate.to_parent vp.coord_device ~x:0. ~y:0. in
       Coordinate.translate coord (vp_top -. fixed_bottom) 0.
     end in
-    let vp' = make vp Device 0. 1. 0. (1. -. init_prop) redim in
+    let vp' = make vp 0. 1. 0. (1. -. init_prop) ~redim in
     (vp_fixed, vp')
 
   let fixed_bottom init_prop vp =
@@ -1176,13 +1184,12 @@ end = struct
       Coordinate.translate
         coord 0. (-. (snd (Coordinate.to_parent coord ~x:0. ~y:1.)))
     end in
-    let vp_fixed =
-      make vp Device 0. 1. 0. init_prop redim_fixed in
+    let vp_fixed = make vp 0. 1. 0. init_prop ~redim:redim_fixed in
     let rec redim vp _ yfactor = begin
       let coord = vp.coord_device in
       Coordinate.scale coord 1. (1. /. yfactor)
     end in
-    let vp' = make vp Device 0. 1. init_prop 1. redim in
+    let vp' = make vp 0. 1. init_prop 1. ~redim in
     (vp_fixed, vp')
 
   (* Border layouts, of desired sizes *)
@@ -1224,36 +1231,36 @@ end = struct
 
   let stroke_preserve ?path ?fit:(do_fit=true) vp coord_name =
     let path = get_path ~notransform:true vp path coord_name in
-    if do_fit && coord_name = Data then fit vp (Path.extents path);
+    if do_fit && coord_name = `Data then fit vp (Path.extents path);
     let path = Path.copy path in
-    add_instruction (stroke_direct ~path vp coord_name) vp
+    add_instruction vp (stroke_direct ~path vp coord_name)
 
   let stroke ?path ?fit vp coord_name =
     stroke_preserve ?path ?fit vp coord_name;
-    if path = None then add_instruction (fun () -> Path.clear vp.path) vp
+    if path = None then add_instruction vp (fun () -> Path.clear vp.path)
 
   let fill_preserve ?path ?fit:(do_fit=true) vp coord_name =
     let path = get_path ~notransform:true vp path coord_name in
-    if do_fit && coord_name = Data then fit vp (Path.extents path);
+    if do_fit && coord_name = `Data then fit vp (Path.extents path);
     let path = Path.copy path in
-    add_instruction (fill_direct ~path vp coord_name) vp
+    add_instruction vp (fill_direct ~path vp coord_name)
 
   let fill ?path ?fit vp coord_name =
     fill_preserve ?path ?fit vp coord_name;
-    if path = None then add_instruction (fun () -> Path.clear vp.path) vp
+    if path = None then add_instruction vp (fun () -> Path.clear vp.path)
 
   let clip_rectangle vp ~x ~y ~w ~h =
-    add_instruction (clip_rectangle_direct vp ~x ~y ~w ~h) vp
+    add_instruction vp (clip_rectangle_direct vp ~x ~y ~w ~h)
 
 (* Text, marks
  ***********************************************************************)
 
   let select_font_face vp slant weight family =
-    add_instruction (select_font_face_direct vp slant weight family) vp
+    add_instruction vp (select_font_face_direct vp slant weight family)
 
-  let show_text vp coord_name ?(rotate=0.) ~x ~y pos text =
+  let text vp ?(coord=`Data) ?(rotate=0.) x y ?(pos=Backend.CC) text =
     (* auto_fit if Data *)
-    if coord_name = Data then begin
+    if coord = `Data then begin
       let ctm = Coordinate.use vp.backend vp.coord_orthonormal in
       let rect = Backend.text_extents vp.backend text in
       Coordinate.restore vp.backend ctm;
@@ -1274,27 +1281,31 @@ end = struct
       let ext = Matrix.transform_rectangle mat rect in
       let x, y = ext.Matrix.x, ext.Matrix.y
       and w, h = ext.Matrix.w, ext.Matrix.h in
-      let x0, y0 = data_from vp Orthonormal (x, y)
-      and xend, yend = data_from vp Orthonormal (x +. w, y +. h) in
+      let x0, y0 = data_from vp `Orthonormal (x, y)
+      and xend, yend = data_from vp `Orthonormal (x +. w, y +. h) in
       auto_fit vp x0 y0 xend yend
     end;
-    add_instruction (show_text_direct vp coord_name ~rotate ~x ~y pos text) vp
+    add_instruction vp (show_text_direct vp coord ~rotate ~x ~y pos text)
 
   let xlabel vp s =
-    add_instruction (xlabel_direct vp s) vp
+    add_instruction vp (xlabel_direct vp s)
 
   let ylabel vp s =
-    add_instruction (ylabel_direct vp s) vp
+    add_instruction vp (ylabel_direct vp s)
 
   let title vp s =
-    add_instruction (title_direct vp s) vp
+    add_instruction vp (title_direct vp s)
 
   let mark vp ~x ~y name =
     auto_fit vp x y x y;
-    add_instruction (mark_direct vp ~x ~y name) vp
+    add_instruction vp (mark_direct vp ~x ~y name)
 
   let xlog vp = vp.axes_system.Axes.x.Axes.log
   let ylog vp = vp.axes_system.Axes.y.Axes.log
 end
 
 include Viewport
+
+(* Local Variables: *)
+(* compile-command: "make -k -C .." *)
+(* End: *)
