@@ -24,7 +24,8 @@
 type t
 (** Viewport handle. *)
 
-type coord_name = [`Device | `Graph | `Data | `Orthonormal]
+type coord_name_rstrct = [ `Device | `Graph | `Orthonormal ]
+type coord_name = [ coord_name_rstrct | `Data ]
 
 val get_coord_from_name : t -> coord_name -> Coordinate.t
 (** [get_coord_from_name viewport coord_name] returns one of the
@@ -51,7 +52,11 @@ val make : t -> ?lines:float -> ?text:float -> ?marks:float ->
 
 val show : t -> unit
 (** [show vp] forces the viewport [vp] and all its children to
-    immediately display their current content. *)
+    immediately display not yet processed instructions. *)
+
+val redraw : t -> unit
+(** [show vp] forces the viewport [vp] and all its children to
+    immediately redraw all their current content. *)
 
 val get_backend : t -> Backend.t
 (** [get_backend vp] returns the backend associated to [vp], if vp is
@@ -127,21 +132,16 @@ val rows : ?syncs:(bool * bool) -> t -> int -> t array
 *)
 
 val columns : ?syncs:(bool * bool) -> t -> int -> t array
-(** [colimns parent nx] creates [n_cols] viewports layouted in a
+(** [columns parent nx] creates [n_cols] viewports layouted in a
     row and returns them in an array of viewports
 
     @param syncs the axes to synchronize (x, y)
 *)
-(* not in public interface *)
-(*val fixed_left : ?axes_sys:bool -> float -> t -> viewport * viewport
-  val fixed_right : ?axes_sys:bool -> float -> t -> viewport * viewport
-  val fixed_top : ?axes_sys:bool -> float -> t -> viewport * viewport
-  val fixed_bottom : ?axes_sys:bool -> float -> t -> viewport * viewport*)
+
 val layout_borders : ?north:float -> ?south:float -> ?west:float ->
   ?east:float -> t -> t * t * t * t * t
-(** [layout_borders parent] returns a 5-uple of viewports where the 4
-    first viewports are fixed in size towards the center while the fifth
-    one is extensible. The viewports are north, south, west, east, center
+(** [layout_borders parent] returns a 5-uple of viewports.
+    The viewports are north, south, west, east, center
     and are placed conformally to their names.
 
     @param north the size of the north's viewport; if zero (default),
@@ -158,8 +158,9 @@ val layout_borders : ?north:float -> ?south:float -> ?west:float ->
     north if zero
 *)
 
-val ortho_from : t -> coord_name -> float * float -> float * float
 val data_from : t -> coord_name -> float * float -> float * float
+val ortho_from : t -> coord_name -> float * float -> float * float
+val ortho_to : t -> coord_name -> float * float -> float * float
 
 val set_line_width : t -> float -> unit
 (** [set_line_width vp w] set the absolute width of the lines on the
@@ -201,9 +202,14 @@ val get_font_size : t -> float
 (** [get_font_size vp] return the current size of the font on the
     viewport [vp] *)
 
-val get_mark_size : t -> float
-(** [get_mark_size vp] return the current size of the marks on the
-    viewport [vp] *)
+val get_mark_size : ?coord:coord_name_rstrct -> t -> float * float
+(** [get_mark_size vp] return [(sx, sy)] the current size in x and y
+    of the marks on the viewport [vp].
+
+    @param coord coordinates in which to express the size. Note that
+    for Orthonormal coordinates, [sx = sy]. If undefined, gives the
+    absolute mark size as to be given to {!set_mark_size} (in that
+    case [sx = sy] too). *)
 
 val lower_left_corner  : t -> float * float
 (** The device's coordinates of the viewport's lower left corner *)
@@ -225,26 +231,23 @@ val set_global_line_join : t -> Backend.line_join -> unit
 val get_line_cap : t -> Backend.line_cap
 val get_dash : t -> float array * float
 val get_line_join : t -> Backend.line_join
-val move_to : t -> x:float -> y:float -> unit
-val line_to : t -> x:float -> y:float -> unit
-val rel_move_to : t -> x:float -> y:float -> unit
-val rel_line_to : t -> x:float -> y:float -> unit
-val curve_to : t ->
-  x1:float -> y1:float -> x2:float -> y2:float -> x3:float -> y3:float -> unit
-val rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
-val arc : t -> r:float -> a1:float -> a2:float -> unit
-val close_path : t -> unit
-val clear_path : t -> unit
-(*val path_extents : t -> rectangle*)
-val stroke_preserve : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
-(** strokes the path (default: viewport's path) on the specified
-    coordinate system, doesn't clear the viewport's path if no path
-    given *)
-val stroke : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
-(** strokes the path (default: viewport's path) on the specified
-    coordinate system, does clear the viewport's path if no path given *)
-val fill_preserve : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
-val fill : ?path:Path.t -> ?fit:bool -> t -> coord_name -> unit
+
+
+val stroke : ?fit:bool -> t -> coord_name -> Path.t -> unit
+(** [stroke vp coord p] draw the path [p] on the the viewport [vp] in the
+    coordinate system [coord].  [p] is unchanged.
+
+    @param fit if [true] (the default), adjust the ranges so that the
+    path is visible in its entirety. *)
+
+val fill : ?fit:bool -> t -> coord_name -> Path.t -> unit
+(** [fill vp coord p] fill the region delimited by the path [p] on the
+    the viewport [vp] in the coordinate system [coord].  [p] is
+    unchanged.
+
+    @param fit if [true] (the default), adjust the ranges so that the
+    path is visible in its entirety. *)
+
 val set_clip : t -> bool -> unit
 (** [set_clip vp c] whether to enable or disable clipping for every
     following instructions on [vp]. *)
@@ -253,11 +256,26 @@ val clip_rectangle : t -> x:float -> y:float -> w:float -> h:float -> unit
       val restore_vp : t -> unit*)
 val select_font_face : t -> Backend.slant -> Backend.weight -> string -> unit
 
+val text_extents :
+  t -> ?coord:coord_name_rstrct ->
+  ?rotate:float ->
+  ?pos:Backend.text_position ->
+  string -> Matrix.rectangle
+(** [text_extents vp text] returns the extents of [text] as displayed
+    by !{Archimedes.Viewport.text}.
+
+    @param coord the coordinate system in which the extents will be
+    given. Beware that as soon a coordinate system changes, the
+    extents are obsolete. *)
+
 val text :
   t -> ?coord:coord_name ->
   ?rotate:float ->
-  float -> float -> ?pos:Backend.text_position -> string -> unit
-(** [text vp x y s] display the string [s] at position [(x, y)].
+  ?pos:Backend.text_position ->
+  float -> float -> string -> unit
+(** [text vp x y s] display the string [s] at position [(x, y)]. The
+    text displayed in an orthonormal space, that means that it won't be
+    stretched by the coordinate system [coord].
 
     @param coord the coordinate system in which the position [(x,y)]
     has to be understood.  Default: [Data].
@@ -266,12 +284,12 @@ val text :
     @param pos the position of the text [s] w.r.t. the position
     [(x,y)].  Default: centering both horizontally and vertically. *)
 
-(*  val text_extents : t -> string -> rectangle*)
-
-val mark : t -> x:float -> y:float -> string -> unit
+val mark : ?coord:coord_name -> t -> x:float -> y:float -> string -> unit
 (** [mark vp x y m] draw the mark given by [m] on the viewport [vp] at
     position [(x,y)] if both [x] and [y] are finite.  Otherwise, does
-    nothing. *)
+    nothing.
+
+    @param coord coordinate system in which to draw the mark. *)
 
 (* val mark_extents : t -> string -> rectangle *)
 
@@ -310,34 +328,6 @@ val set_xlog : t -> bool -> unit
 val set_ylog : t -> bool -> unit
 (** [set_ylog vp true] set a log scale on OY on the viewport [vp] *)
 
-val set_line_width_direct : t -> float -> unit -> unit
-val set_font_size_direct : t -> float -> unit -> unit
-val set_mark_size_direct : t -> float -> unit -> unit
-val set_rel_line_width_direct : t -> float -> unit -> unit
-val set_rel_font_size_direct : t -> float -> unit -> unit
-val set_rel_mark_size_direct : t -> float -> unit -> unit
-val set_color_direct : t -> Color.t -> unit -> unit
-val set_line_cap_direct : t -> Backend.line_cap -> unit -> unit
-val set_dash_direct : t -> float -> float array -> unit -> unit
-val set_line_join_direct : t -> Backend.line_join -> unit -> unit
-val stroke_direct : ?path:Path.t -> t -> coord_name -> unit -> unit
-val fill_direct : ?path:Path.t -> t -> coord_name -> unit -> unit
-val clip_rectangle_direct : t -> x:float -> y:float -> w:float ->
-  h:float -> unit -> unit
-val select_font_face_direct : t -> Backend.slant -> Backend.weight ->
-  string -> unit -> unit
-val show_text_direct : t -> coord_name -> ?rotate:float ->
-  x:float -> y:float -> Backend.text_position -> string -> unit -> unit
-val mark_direct : t -> x:float -> y:float -> string -> unit -> unit
-val save_direct : t -> unit -> unit
-val restore_direct : t -> unit -> unit
-
-
-val add_instruction : t -> (unit -> unit) -> unit
-val do_instructions : t -> unit
-
-val remove_last_instruction : t -> unit
-val clear_instructions : t -> unit
 
 val auto_fit : t -> float -> float -> float -> float -> unit
 (** [auto_fit vp x0 y0 x1 y1] ensures that the rectangle delimited by
@@ -349,6 +339,38 @@ val fit : t -> Matrix.rectangle -> unit
 
 val save : t -> unit
 val restore : t -> unit
+
+
+(** {2 Internal functions} *)
+
+val set_line_width_direct : t -> float -> unit -> unit
+val set_font_size_direct : t -> float -> unit -> unit
+val set_mark_size_direct : t -> float -> unit -> unit
+val set_rel_line_width_direct : t -> float -> unit -> unit
+val set_rel_font_size_direct : t -> float -> unit -> unit
+val set_rel_mark_size_direct : t -> float -> unit -> unit
+val set_color_direct : t -> Color.t -> unit -> unit
+val set_line_cap_direct : t -> Backend.line_cap -> unit -> unit
+val set_dash_direct : t -> float -> float array -> unit -> unit
+val set_line_join_direct : t -> Backend.line_join -> unit -> unit
+val stroke_direct : t -> coord_name -> Path.t -> unit -> unit
+val fill_direct : t -> coord_name -> Path.t -> unit -> unit
+val clip_rectangle_direct : t -> x:float -> y:float -> w:float ->
+  h:float -> unit -> unit
+val select_font_face_direct : t -> Backend.slant -> Backend.weight ->
+  string -> unit -> unit
+val show_text_direct : t -> coord_name -> ?rotate:float ->
+  x:float -> y:float -> Backend.text_position -> string -> unit -> unit
+val mark_direct : ?coord:coord_name -> t -> x:float -> y:float ->
+  string -> unit -> unit
+val save_direct : t -> unit -> unit
+val restore_direct : t -> unit -> unit
+
+val add_instruction : t -> (unit -> unit) -> unit
+val do_instructions : t -> unit
+
+val remove_last_instruction : t -> unit
+val clear_instructions : t -> unit
 
 (**/**)
 

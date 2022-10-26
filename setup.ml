@@ -4991,7 +4991,7 @@ let setup_t =
           ocaml_version = None;
           findlib_version = None;
           name = "archimedes";
-          version = "0.4.12";
+          version = "0.4.13";
           license =
             OASISLicense.DEP5License
               {

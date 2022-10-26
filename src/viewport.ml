@@ -43,7 +43,7 @@ type t = {
 
   mutable square_side: float;
 
-  path: Path.t; (* current path on this viewport *)
+  (* path: Path.t; (\* current path on this viewport *\) *)
 
   (* Axes system associated to the viewport *)
   mutable axes_system: axes_t;
@@ -59,9 +59,12 @@ type t = {
   (* An instruction is a "thing" to plot on the device, we memorize
      their order to replot in case of necessity *)
   mutable instructions: (unit -> unit) Queue.t;
-
-  (* Draw immediately or wait for closing ? *)
-  mutable immediate_drawing: bool;
+  (* Instructions that are not drawn on the device yet. *)
+  mutable pending_instructions: (unit -> unit) Queue.t;
+  (* The instructions are dirtied if something has changed their
+     graphical appearance, and all instructions have to be
+     reprocessed. *)
+  mutable instructions_dirtied: bool;
 
   (* Redimension function: when the parent viewport grows of x and y,
      what should subsequent coordinates become ? This function must set
@@ -187,8 +190,8 @@ module Axes = struct
 
 end
 
-
-type coord_name = [`Device | `Graph | `Data | `Orthonormal]
+type coord_name_rstrct = [ `Device | `Graph | `Orthonormal ]
+type coord_name = [ coord_name_rstrct | `Data ]
 
 (* Multiplier to get "user-friendly" values (e.g. 12pt instead of 0.024) *)
 let usr_lw, usr_ts, usr_ms = 500., 500., 100.
@@ -225,17 +228,6 @@ let data_norm_log axes_system (x, y) =
   in
   (axis_norm_log axes_system.x x, axis_norm_log axes_system.y y)
 
-let rec ortho_from vp coord_name pos = match coord_name with
-  | `Device ->
-    ortho_from vp `Orthonormal (from_parent vp.coord_orthonormal pos)
-  | `Graph ->
-    ortho_from vp `Device (to_parent vp.coord_graph pos)
-  | `Data ->
-    let pos = data_norm_log vp.axes_system pos in
-    ortho_from vp `Graph (to_parent vp.coord_data pos)
-  | `Orthonormal ->
-    pos
-
 let data_unnorm_log axes_system (x, y) =
   let axis_unnorm_log axis x =
     if axis.log then
@@ -254,13 +246,23 @@ let rec data_from vp coord_name pos = match coord_name with
   | `Data -> pos
   | `Orthonormal -> data_from vp `Device (to_parent vp.coord_orthonormal pos)
 
+let rec ortho_from vp coord_name pos = match coord_name with
+  | `Device -> from_parent vp.coord_orthonormal pos
+  | `Graph -> ortho_from vp `Device (to_parent vp.coord_graph pos)
+  | `Data ->
+    let pos = data_norm_log vp.axes_system pos in
+    ortho_from vp `Graph (to_parent vp.coord_data pos)
+  | `Orthonormal -> pos
+
+let rec ortho_to vp coord_name pos = match coord_name with
+  | `Device -> to_parent vp.coord_orthonormal pos
+  | `Graph -> from_parent vp.coord_graph (ortho_to vp `Device pos)
+  | `Data -> data_from vp `Orthonormal pos
+  | `Orthonormal -> pos
+
 let get_path ?(notransform=false) vp p coord_name =
-  let p = match p with
-    | None -> vp.path
-    | Some p -> p
-  in
   if coord_name = `Data && not notransform &&
-    (vp.axes_system.x.log || vp.axes_system.y.log) then
+       (vp.axes_system.x.log || vp.axes_system.y.log) then
     Path.map p (data_norm_log vp.axes_system)
   else p
 
@@ -314,7 +316,7 @@ let apply_clip vp coord_name =
       Backend.clip_rectangle vp.backend 0. 0. 1. 1.
   )
 
-let stroke_direct ?path vp coord_name () =
+let stroke_direct vp coord_name path () =
   let path = get_path vp path coord_name in
   let coord = get_coord_from_name vp coord_name in
   Backend.save vp.backend;
@@ -323,7 +325,7 @@ let stroke_direct ?path vp coord_name () =
   Backend.stroke_path_preserve vp.backend path;
   Backend.restore vp.backend (* remove CTM and clip *)
 
-let fill_direct ?path vp coord_name () =
+let fill_direct vp coord_name path () =
   let path = get_path vp path coord_name in
   let coord = get_coord_from_name vp coord_name in
   Backend.save vp.backend;
@@ -344,9 +346,9 @@ let show_text_direct vp coord_name ?(rotate=0.) ~x ~y pos text () =
   Backend.show_text vp.backend ~rotate ~x ~y pos text;
   Coordinate.restore vp.backend ctm
 
-let orthoinstr_direct vp ~x ~y f =
+let orthoinstr_direct vp ~coord ~x ~y f =
   let ms = vp.mark_size /. vp.square_side in
-  let x, y = ortho_from vp `Data (x, y) in
+  let x, y = ortho_from vp coord (x, y) in
     (* FIXME: the idea of coordinate system is that we create them
        and use/update them, not that we create new ones all the time. *)
   let coord = Coordinate.make_translate vp.coord_orthonormal
@@ -356,11 +358,8 @@ let orthoinstr_direct vp ~x ~y f =
   f vp.backend;
   Coordinate.restore vp.backend ctm
 
-let path_direct vp ~x ~y path () =
-  orthoinstr_direct vp ~x ~y (fun b -> Backend.stroke_path_preserve b path)
-
-let mark_direct vp ~x ~y name () =
-  orthoinstr_direct vp ~x ~y (Marker.render name)
+let mark_direct ?(coord=`Data) vp ~x ~y name () =
+  orthoinstr_direct vp ~coord ~x ~y (Marker.render name)
 
 let save_direct vp () =
   let save = {
@@ -402,15 +401,33 @@ let blank vp =
   Backend.restore vp.backend;
   Coordinate.restore vp.backend ctm
 
-let add_instruction vp f = Queue.push f vp.instructions
+let add_instruction vp f =
+  Queue.push f vp.instructions;
+  Queue.push f vp.pending_instructions
+
+let rec consume f q =
+  try f (Queue.pop q); consume f q with Queue.Empty -> ()
 
 (* Note: if a vp is synchronized with one of its children, this
    children will be redrawn two times. *)
 let rec do_instructions vp =
+  vp.instructions_dirtied <- false;
   if vp.saves <> [] then print_string "Warning: saves list is not empty\n";
   blank vp;
-  Queue.iter (fun f -> f ()) vp.instructions;
+  Queue.iter (fun f -> f()) vp.instructions;
+  (* We've also processed the pending instructions. *)
+  Queue.clear vp.pending_instructions;
   List.iter do_instructions (List.rev vp.children)
+
+let rec do_pending_instructions vp =
+  if vp.instructions_dirtied then begin
+    do_instructions vp;
+    vp.instructions_dirtied <- false;
+  end else begin
+    consume (fun f -> f()) vp.pending_instructions;
+    (* Update the children too. *)
+    List.iter do_pending_instructions (List.rev vp.children)
+  end
 
 let save vp = add_instruction vp (save_direct vp)
 let restore vp = add_instruction vp (restore_direct vp)
@@ -420,12 +437,21 @@ let remove_last_instruction vp =
      partial evaluation (because [vp.instructions] is a [(unit ->
      unit) Queue.t]). *)
   let aux q = ignore (Queue.pop q) in
-  aux vp.instructions
-let clear_instructions vp = Queue.clear vp.instructions
+  aux vp.instructions;
+  try aux vp.pending_instructions with Queue.Empty -> print_string "Warning : removed last instruction, but it was already drawn to device.\n"
+
+let clear_instructions vp =
+  vp.instructions_dirtied <- false;
+  Queue.clear vp.instructions;
+  Queue.clear vp.pending_instructions
 
 let show vp =
-  do_instructions vp; (* => also for children *)
-    Backend.show vp.backend
+  do_pending_instructions vp; (* => also for children *)
+  Backend.show vp.backend
+
+let redraw vp =
+  do_instructions vp;
+  Backend.show vp.backend
 
 let close vp =
   let parent = vp.parent in
@@ -471,7 +497,19 @@ let set_rel_mark_size vp ms =
 
 let get_line_width vp = vp.line_width
 let get_font_size vp = vp.font_size
-let get_mark_size vp = vp.mark_size
+let get_mark_size ?coord vp =
+  match coord with
+  | None -> vp.mark_size, vp.mark_size
+  | Some `Orthonormal ->
+    (* fasten the computation for Orthonormal coords *)
+    let ms = vp.mark_size /. vp.square_side in ms, ms
+  | Some coord ->
+    let ms = vp.mark_size /. vp.square_side in
+    let dx, dy = Coordinate.to_device_distance vp.coord_orthonormal ms ms in
+    let dx, dy =
+      Coordinate.to_coord_distance (get_coord_from_name vp coord) dx dy
+    in
+    dx, dy
 
 (* ......................................................................... *)
 
@@ -548,7 +586,6 @@ let init ?(lines=def_lw) ?(text=def_ts) ?(marks=def_ms)
       (* We don't care; will be updated as soon as points are added or we
 	 change axes. *)
     coord_data = Coordinate.make_identity coord_graph;
-    path = Path.make ();
     axes_system = Axes.default_axes_system ();
     xaxis_size = xaxis_size;
     yaxis_size = yaxis_size;
@@ -557,7 +594,8 @@ let init ?(lines=def_lw) ?(text=def_ts) ?(marks=def_ms)
     mark_size = nan;
     color = def_color;
     instructions = Queue.create ();
-    immediate_drawing = false;
+    pending_instructions = Queue.create ();
+    instructions_dirtied = false;
     redim = (fun _ _ _ -> ());
     square_side = size0;
     clip = true;
@@ -613,7 +651,6 @@ let make vp ?(lines=def_lw) ?(text=def_ts) ?(marks=def_ms)
       (* We don't care; will be updated as soon as points are added or we
 	 change axes. *)
     coord_data = Coordinate.make_identity coord_graph;
-    path = Path.make ();
     axes_system = Axes.default_axes_system ();
     xaxis_size = xaxis_size;
     yaxis_size = yaxis_size;
@@ -622,7 +659,8 @@ let make vp ?(lines=def_lw) ?(text=def_ts) ?(marks=def_ms)
     font_size = text;
     color = vp.color;
     instructions = Queue.create ();
-    immediate_drawing = false;
+    pending_instructions = Queue.create ();
+    instructions_dirtied = false;
     redim = redim;
     square_side = size0;
     clip = true;
@@ -658,10 +696,9 @@ let update_coordinate_system vp =
 
 (* Updates gx0 and gxend for an axes system and then redraw them. *)
 let update_axes_system vp =
+  vp.instructions_dirtied <- true;
   Axes.update_axes_system vp.axes_system vp.xaxis_size vp.yaxis_size;
-  update_coordinate_system vp;
-  if vp.immediate_drawing then
-    do_instructions vp
+  update_coordinate_system vp
 
 let update_ratio vp ratio =
   let sync = vp.axes_system.ratio in
@@ -935,87 +972,25 @@ let columns ?syncs:((cols_sync_x, cols_sync_y)=(false, false)) vp n =
     ~rows_sync_x:false ~rows_sync_y:false set get;
   ret
 
-let fixed_left init_prop vp =
-  let redim_fixed vp xfactor _ = begin
-    let coord = vp.coord_device in
-    Coordinate.scale coord (1. /. xfactor) 1.;
-  end in
-  let vp_fixed = make vp 0. init_prop 0. 1. ~redim:redim_fixed in
-  let redim vp xfactor _ = begin
-    let coord = vp.coord_device in
-    Coordinate.scale coord (1. /. xfactor) 1.;
-    let fixed_right, _ =
-      Coordinate.to_parent vp_fixed.coord_device ~x:1. ~y:0. in
-    let vp_left, _ = Coordinate.to_parent vp.coord_device ~x:0. ~y:0. in
-    Coordinate.translate coord (vp_left -. fixed_right) 0.
-  end in
-  let vp' = make vp init_prop 1. 0. 1. ~redim in
-  (vp_fixed, vp')
-
-let fixed_right init_prop vp =
-  let redim_fixed vp xfactor _ = begin
-    let coord = vp.coord_device in
-    Coordinate.scale coord (1. /. xfactor) 1.;
-    Coordinate.translate
-      coord (-. (fst (Coordinate.to_parent coord ~x:1. ~y:0.))) 0.
-  end in
-  let vp_fixed = make vp init_prop 1. 0. 1. ~redim:redim_fixed in
-  let redim vp xfactor _ = begin
-    let coord = vp.coord_device in
-    Coordinate.scale coord (1. /. xfactor) 1.
-  end in
-  let vp' = make vp 0. init_prop 0. 1. ~redim in
-  (vp_fixed, vp')
-
-let fixed_top init_prop vp =
-  let redim_fixed vp _ yfactor = begin
-    let coord = vp.coord_device in
-    Coordinate.scale coord 1. (1. /. yfactor);
-  end in
-  let vp_fixed = make vp 0. 1. (1. -. init_prop) 1. ~redim:redim_fixed
-  in
-  let rec redim vp _ yfactor = begin
-    let coord = vp.coord_device in
-    Coordinate.scale coord 1. (1. /. yfactor);
-    let _, fixed_bottom =
-      Coordinate.to_parent vp_fixed.coord_device ~x:0. ~y:1. in
-    let _, vp_top = Coordinate.to_parent vp.coord_device ~x:0. ~y:0. in
-    Coordinate.translate coord (vp_top -. fixed_bottom) 0.
-  end in
-  let vp' = make vp 0. 1. 0. (1. -. init_prop) ~redim in
-  (vp_fixed, vp')
-
-let fixed_bottom init_prop vp =
-  let redim_fixed vp _ yfactor = begin
-    let coord = vp.coord_device in
-    Coordinate.scale coord 1. (1. /. yfactor);
-    Coordinate.translate
-      coord 0. (-. (snd (Coordinate.to_parent coord ~x:0. ~y:1.)))
-  end in
-  let vp_fixed = make vp 0. 1. 0. init_prop ~redim:redim_fixed in
-  let rec redim vp _ yfactor = begin
-    let coord = vp.coord_device in
-    Coordinate.scale coord 1. (1. /. yfactor)
-  end in
-  let vp' = make vp 0. 1. init_prop 1. ~redim in
-  (vp_fixed, vp')
-
 (* Border layouts, of desired sizes *)
 let layout_borders ?(north=0.) ?(south=0.) ?(west=0.) ?(east=0.) vp =
   if south +. north >= 1. || east +. west >= 1. then
     invalid_arg "Archimedes.Viewport.layout_borders: \
                    invalid borders dimensions (sum need to be < 1).";
-  let east, vp =
-    if east > 0. then fixed_right east vp else vp, vp
-  in
-  let west, vp =
-    if west > 0. then fixed_left west vp else vp, vp
-  in
-  let south, vp =
-    if south > 0. then fixed_bottom south vp else vp, vp
-  in
-  let north, center =
-    if north > 0. then fixed_top north vp else vp, vp
+  let west =
+    if west > 0. then make vp 0. west 0. 1.
+    else vp
+  and east =
+    if east > 0. then make vp (1. -. east) 1. 0. 1.
+    else vp
+  and south =
+    if south > 0. then make vp west (1. -. east) 0. south
+    else vp
+  and north =
+    if north > 0. then make vp west (1. -. east) (1. -. north) 1.
+    else vp
+  and center =
+    make vp west (1. -. east) east (1. -. north)
   in
   (north, south, west, east, center)
 
@@ -1023,39 +998,17 @@ let layout_borders ?(north=0.) ?(south=0.) ?(west=0.) ?(east=0.) vp =
 (* Viewport path manipulation
  ***********************************************************************)
 
-let move_to vp = Path.move_to vp.path
-let line_to vp = Path.line_to vp.path
-let rel_move_to vp = Path.rel_move_to vp.path
-let rel_line_to vp = Path.rel_line_to vp.path
-
-let curve_to vp = Path.curve_to vp.path
-let rectangle vp = Path.rectangle vp.path
-let arc vp = Path.arc vp.path
-
-let close_path vp = Path.close vp.path
-let clear_path vp = Path.clear vp.path
-
-let path_extents vp = Path.extents vp.path
-
-let stroke_preserve ?path ?fit:(do_fit=true) vp coord_name =
+let stroke ?fit:(do_fit=true) vp coord_name path =
   let path = get_path ~notransform:true vp path coord_name in
   if do_fit && coord_name = `Data then fit vp (Path.extents path);
   let path = Path.copy path in
-  add_instruction vp (stroke_direct ~path vp coord_name)
+  add_instruction vp (stroke_direct vp coord_name path)
 
-let stroke ?path ?fit vp coord_name =
-  stroke_preserve ?path ?fit vp coord_name;
-  if path = None then add_instruction vp (fun () -> Path.clear vp.path)
-
-let fill_preserve ?path ?fit:(do_fit=true) vp coord_name =
+let fill ?fit:(do_fit=true) vp coord_name path =
   let path = get_path ~notransform:true vp path coord_name in
   if do_fit && coord_name = `Data then fit vp (Path.extents path);
   let path = Path.copy path in
-  add_instruction vp (fill_direct ~path vp coord_name)
-
-let fill ?path ?fit vp coord_name =
-  fill_preserve ?path ?fit vp coord_name;
-  if path = None then add_instruction vp (fun () -> Path.clear vp.path)
+  add_instruction vp (fill_direct vp coord_name path)
 
 let clip_rectangle vp ~x ~y ~w ~h =
   add_instruction vp (clip_rectangle_direct vp ~x ~y ~w ~h)
@@ -1066,42 +1019,52 @@ let clip_rectangle vp ~x ~y ~w ~h =
 let select_font_face vp slant weight family =
   add_instruction vp (select_font_face_direct vp slant weight family)
 
-let text vp ?(coord=`Data) ?(rotate=0.) x y ?(pos=Backend.CC) text =
+let text_extents vp ?(coord=`Orthonormal) ?(rotate=0.) ?(pos=Backend.CC) text =
+  (* Compute the extents of the text in Orthonormal coordinates as if
+     it's placed at the origin. *)
+  let ctm = Coordinate.use vp.backend vp.coord_orthonormal in
+  let rect = Backend.text_extents vp.backend text in
+  Coordinate.restore vp.backend ctm;
+  (* Consider the text position in those extents. *)
+  let tr_x = match pos with
+    | Backend.CC | Backend.CT | Backend.CB ->
+      rect.Matrix.x +. 0.5 *. rect.Matrix.w
+    | Backend.RC | Backend.RT | Backend.RB ->
+      rect.Matrix.x
+    | Backend.LC | Backend.LT | Backend.LB ->
+      rect.Matrix.x +. rect.Matrix.w
+  and tr_y = match pos with
+    | Backend.CC | Backend.LC | Backend.RC ->
+      rect.Matrix.y +. 0.5 *. rect.Matrix.h
+    | Backend.CT | Backend.LT | Backend.RT ->
+      rect.Matrix.y +. rect.Matrix.h
+    | Backend.CB | Backend.LB | Backend.RB ->
+      rect.Matrix.y
+  in
+  let mat = Matrix.make_translate (-. tr_x) (-. tr_y) in
+  Matrix.rotate mat rotate;
+  (* The extents relative to the origin in Orthonormal coordinates are
+     the smallest rectangle containing the text box placed according
+     to [pos] and rotated. *)
+  let ortho_ext = Matrix.transform_rectangle mat rect in
+  (* TODO: that mechanism of transformations for a rectangle is too
+     painful, we have to provide something better. *)
+  let x0, y0 = ortho_to vp coord (ortho_ext.Matrix.x, ortho_ext.Matrix.y) in
+  let x1 = ortho_ext.Matrix.x +. ortho_ext.Matrix.w
+  and y1 = ortho_ext.Matrix.y +. ortho_ext.Matrix.h in
+  let x1, y1 = ortho_to vp coord (x1, y1) in
+  { Matrix.x = x0; y = y0; w = x1 -. x0; h = y1 -. y0 }
+
+let text vp ?(coord=`Data) ?(rotate=0.) ?(pos=Backend.CC) x y text =
   (* auto_fit if Data *)
   if coord = `Data then begin
-    (* Compute the extents of the text in Orthonormal coordinates as if
-       it's placed at the origin. *)
-    let ctm = Coordinate.use vp.backend vp.coord_orthonormal in
-    let rect = Backend.text_extents vp.backend text in
-    Coordinate.restore vp.backend ctm;
-    (* Consider the text position in those extents. *)
-    let tr_x = match pos with
-      | Backend.CC | Backend.CT | Backend.CB ->
-        rect.Matrix.x +. 0.5 *. rect.Matrix.w
-      | Backend.RC | Backend.RT | Backend.RB ->
-        rect.Matrix.x
-      | Backend.LC | Backend.LT | Backend.LB ->
-        rect.Matrix.x +. rect.Matrix.w
-    and tr_y = match pos with
-      | Backend.CC | Backend.LC | Backend.RC ->
-        rect.Matrix.y +. 0.5 *. rect.Matrix.h
-      | Backend.CT | Backend.LT | Backend.RT ->
-        rect.Matrix.y +. rect.Matrix.h
-      | Backend.CB | Backend.LB | Backend.RB ->
-        rect.Matrix.y
-    in
-    let mat = Matrix.make_translate (-. tr_x) (-. tr_y) in
-    Matrix.rotate mat rotate;
-    (* The extents relative to the origin in Orthonormal coordinates are
-       the smallest rectangle containing the text box placed according
-       to [pos] and rotated. *)
-    let ortho_extents = Matrix.transform_rectangle mat rect in
-    (* Now transform those extents in Data coordinates. We can't use
-       [data_from vp `Orthonormal] since the auto fitted range acts as a
-       feedback term for the extents ; [data_from] assumes the range is
-       fixed. Here we can have the range updated by [auto_fit] and it
-       then changes the Data coordinates of the text extents. So we have
-       to do something special. *)
+    (* We can't use [text_extents ~coord:`Data] since the auto fitted
+       range acts as a feedback term for the extents ; [text_extents
+       ~coord:`Data] assumes the range is fixed. Here we can have the
+       range updated by [auto_fit] and it then changes the Data
+       coordinates of the text extents. So we have to do something
+       special. *)
+    let ortho_extents = text_extents vp ~rotate ~pos text in
     let ow' = -. ortho_extents.Matrix.x
     and oh' = -. ortho_extents.Matrix.y in
     let ow = ortho_extents.Matrix.w -. ow'
@@ -1141,10 +1104,11 @@ let ylabel vp s =
 let title vp s =
   add_instruction vp (title_direct vp s)
 
-let mark vp ~x ~y name =
+let mark ?(coord=`Data) vp ~x ~y name =
   if is_finite x && is_finite y then (
-    auto_fit vp x y x y;
-    add_instruction vp (mark_direct vp ~x ~y name)
+    if coord = `Data then
+      auto_fit vp x y x y;
+    add_instruction vp (mark_direct vp ~coord ~x ~y name)
   )
 
 

@@ -226,9 +226,9 @@ end
 (* FIXME: tlog to be removed and automatically detected from the
    viewport axes).  In case the viewport axes switch to logscale, a
    resampling should be done. *)
-let fx vp ?tlog ?n ?strategy ?cost ?(style=`Lines) ?base
+let fx vp ?tlog ?fn0 ?n ?strategy ?cost ?(style=`Lines) ?base
     ?(fill=false) ?(fillcolor=default_fillcolor) f a b =
-  let x, y = Sampler.x ?tlog ?n ?strategy ?cost f a b in
+  let x, y = Sampler.x ?tlog ?fn0 ?n ?strategy ?cost f a b in
   let fill_subpath =
     if fill then (fun sub_path _ _ ->
       let sub_a = Path.subpath_x sub_path
@@ -239,14 +239,14 @@ let fx vp ?tlog ?n ?strategy ?cost ?(style=`Lines) ?base
         Path.line_to sub_path sub_a 0.
       | Some g ->
         (* Notice that the sampling is in reversed order: *)
-        let bx, by = Sampler.x ?tlog ?n ?strategy ?cost g sub_b sub_a in
+        let bx, by = Sampler.x ?tlog ?fn0 ?n ?strategy ?cost g sub_b sub_a in
         Path.unsafe_line_of_array sub_path bx by 0 (Array.length bx - 1)
       );
       Path.close sub_path;
       let color = V.get_color vp in
       V.set_color vp fillcolor;
       (* Do not fit on its extents, because we don't want to fit [base]. *)
-      V.fill ~path:sub_path ~fit:false vp `Data;
+      V.fill vp `Data sub_path ~fit:false;
       V.set_color vp color;
     )
     else do_nothing in
@@ -256,15 +256,15 @@ let fx vp ?tlog ?n ?strategy ?cost ?(style=`Lines) ?base
     fill_subpath;
   V.fit vp (Path.extents path);
   (match style with
-  | `Lines | `Linesmarkers _ -> V.stroke ~path vp `Data
+  | `Lines | `Linesmarkers _ -> V.stroke vp `Data path
   | `Markers _ -> ()); (* Do not usually make sense but convenient
                          so see which data points where chosen. *)
   PlotArray.draw_marks vp style x y (Array.length x)
 
 
-let xyf vp ?tlog ?n ?strategy ?cost ?(style=`Lines) ?(fill=false)
+let xyf vp ?tlog ?fn0 ?n ?strategy ?cost ?(style=`Lines) ?(fill=false)
     ?(fillcolor=default_fillcolor) f a b =
-  let x, y = Sampler.xy ?tlog ?n ?strategy ?cost f a b in
+  let x, y = Sampler.xy ?tlog ?fn0 ?n ?strategy ?cost f a b in
   let n = Array.length x in
   PlotArray.unsafe_xy vp ~fill ~fillcolor ~style x y n
 
