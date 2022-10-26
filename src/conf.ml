@@ -18,11 +18,11 @@
 (** Configuration values, possibly put by the 'configure' script. *)
 
 let destdirs () =
-  let destdir = [ "$(libdir)"; "$(ocamlfind_destdir)" ] in
+  let destdir = [ "/usr/local/lib"; "/usr/local/lib/ocaml/3.12.1" ] in
   try Sys.getenv "OCAMLPATH" :: destdir
   with Not_found -> destdir
 
 let plugins_dirs () =
-  List.map (fun destdir -> Filename.concat destdir "$(pkg_name)") (destdirs ())
+  List.map (fun destdir -> Filename.concat destdir "archimedes") (destdirs ())
 
-let datadirs = [ Filename.concat "$(datarootdir)" "$(pkg_name)" ]
+let datadirs = [ Filename.concat "/usr/local/share" "archimedes" ]
