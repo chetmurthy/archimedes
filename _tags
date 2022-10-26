@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 4b4abea89f8c58f33310b7ba2ad3758d)
+# DO NOT EDIT (digest: d76ab1e64cde7e6f8976f695ed9890fc)
 # Ignore VCS directories, you can use the same kind of rule outside 
 # OASIS_START/STOP if you want to exclude directories that contains 
 # useless stuff for the build process
@@ -20,6 +20,7 @@
 "src/string_utils.cmx": for-pack(Archimedes_internals)
 "src/priorityQueue.cmx": for-pack(Archimedes_internals)
 "src/matrix.cmx": for-pack(Archimedes_internals)
+"src/bmp.cmx": for-pack(Archimedes_internals)
 "src/color.cmx": for-pack(Archimedes_internals)
 "src/path.cmx": for-pack(Archimedes_internals)
 "src/backend.cmx": for-pack(Archimedes_internals)
