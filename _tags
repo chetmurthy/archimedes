@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: d76ab1e64cde7e6f8976f695ed9890fc)
+# DO NOT EDIT (digest: 53d5a2f111227fdbde1cbb97143830d0)
 # Ignore VCS directories, you can use the same kind of rule outside 
 # OASIS_START/STOP if you want to exclude directories that contains 
 # useless stuff for the build process
@@ -107,6 +107,16 @@
 "examples/multi_hue.byte": use_archimedes_internals
 "examples/multi_hue.byte": pkg_dynlink
 "examples/multi_hue.byte": pkg_bigarray
+# Executable files_pie.ml
+"examples/files_pie.byte": use_archimedes
+"examples/files_pie.byte": use_archimedes_internals
+"examples/files_pie.byte": pkg_dynlink
+"examples/files_pie.byte": pkg_bigarray
+# Executable incremental_drawing.ml
+"examples/incremental_drawing.byte": use_archimedes
+"examples/incremental_drawing.byte": use_archimedes_internals
+"examples/incremental_drawing.byte": pkg_dynlink
+"examples/incremental_drawing.byte": pkg_bigarray
 <examples/*.ml{,i}>: use_archimedes
 <examples/*.ml{,i}>: use_archimedes_internals
 <examples/*.ml{,i}>: pkg_dynlink

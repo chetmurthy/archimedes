@@ -52,7 +52,11 @@ val make : t -> ?lines:float -> ?text:float -> ?marks:float ->
 
 val show : t -> unit
 (** [show vp] forces the viewport [vp] and all its children to
-    immediately display their current content. *)
+    immediately display not yet processed instructions. *)
+
+val redraw : t -> unit
+(** [show vp] forces the viewport [vp] and all its children to
+    immediately redraw all their current content. *)
 
 val get_backend : t -> Backend.t
 (** [get_backend vp] returns the backend associated to [vp], if vp is
@@ -112,7 +116,7 @@ val grid : ?syncs:(bool * bool * bool * bool) -> t -> int -> int -> t array arra
 (** [grid parent nx ny] returns [vp] an array of [nx] * [ny]
     sub-viewports of [parent]  arranged in a grid of [nx] columns and
     [ny] rows.  The bottom left viewport is [vp.(0).(0)], the one to
-    its right (resp. abobve) is [vp.(1).(0)] (resp. [vp.(0).(1)]).
+    its right (resp. above) is [vp.(1).(0)] (resp. [vp.(0).(1)]).
 
     @param syncs (cx, cy, rx, ry) where [cx] (resp. [cy]) says whether
     to synchronize the X-axis (resp. the [Y-axis]) along the columns
@@ -258,7 +262,7 @@ val text_extents :
   ?pos:Backend.text_position ->
   string -> Matrix.rectangle
 (** [text_extents vp text] returns the extents of [text] as displayed
-    by !{Archimedes.Viewport.text}.
+    by {!Archimedes.Viewport.text}.
 
     @param coord the coordinate system in which the extents will be
     given. Beware that as soon a coordinate system changes, the

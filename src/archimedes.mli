@@ -1,7 +1,7 @@
 
 (** A 2D plotting library with various backends.
 
-    @version 0.4.14
+    @version 0.4.17
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke
@@ -243,8 +243,8 @@ sig
       It is the form used by [Graphics]. *)
 
   val hue : float -> t
-  (** [hue h] returns a color of given hue [h] in the interval \[0 : 360.\[
-      and of maximal luminance. *)
+  (** [hue h] returns a color of given hue [h] in the interval \[0 .. 360.\[
+      ([h] is reduced modulo 360.) and of maximal luminance. *)
 
   val r : t -> float
   (** Returns the red component of a color.*)
@@ -280,6 +280,9 @@ sig
   val cyan : t
   val white : t
   val dark_slate_grey : t
+
+  val colors : t list
+  (** The list of all predefined colors. *)
 
   (** {4 Shades of Blue} *)
 
@@ -353,7 +356,6 @@ sig
   val silver : t
   val trolley_grey : t
 
-
   (** {3 Merging colors} *)
 
   (** Different ways of merging colors.  See
@@ -398,8 +400,19 @@ sig
   (** Adds the first color to the second color, according to the
       operator [op] (default : [Over]).*)
 
+  (** {3 Variations of a given color} *)
 
+  val lighten : t -> float -> t
+  (** [lighten c v] Lighten the color [c] of [v] percent. 0 corresponds to
+      the same color, 1 corresponds to the white color. *)
 
+  val darken : t -> float -> t
+  (** [darken c v] Darken the color [c] of [v] percent. 0 correspond to the
+      same color, 1 corresponds to the black color. *)
+
+  val highest_contrast_bw : t -> t
+  (** returns black or white depending on which of the two is better to
+      write on the given color. *)
 end
 
 
@@ -498,6 +511,14 @@ sig
       drawn clockwise to the angle [a2]. The angles are given in
       radians.  The above holds provided the three values [r], [a1], and
       [a2] are finite.  The function does nothing otherwise.  *)
+
+  val arc_center: t -> r:float -> a1:float -> a2:float -> unit
+  (** [arc p r a1 a2] same as {!arc} but the current point defines the
+      arc center of radius instead of start point *)
+
+  val circle: t -> r:float -> unit
+  (** [circle p r] draws a circle of radius [r] with its center on the
+      path's current point. *)
 
   val close: t -> unit
   (** [close p] Closes the path. It is usually not required to close a
@@ -761,19 +782,21 @@ sig
       complete until this function is called. *)
 
   val height : t -> float
-    (** Returns the width of the backend canvas. *)
+  (** Returns the width of the backend canvas. *)
 
   val width : t -> float
-    (** Returns the height of the backend canvas. *)
+  (** Returns the height of the backend canvas. *)
 
   val name : t -> string
   (** Returns the name under which the backend was registered. *)
 
   val registered: unit -> string list
-    (** Return the list of registered (i.e. loaded) backends. *)
+  (** Return the list of registered (i.e. loaded) backends. *)
 
-  val available : dirs:string list -> string list
-  (** Return the list of available backends in the given directories. *)
+  val available : ?dirs:string list -> unit -> string list
+  (** Returns the list of available backends in the given
+      directories. Default directories are selected from compile time
+      paths and runtime OCAMLPATH. *)
 
 
   (************************************************************************)
@@ -977,7 +1000,11 @@ sig
 
   val show : t -> unit
   (** [show vp] forces the viewport [vp] and all its children to
-      immediately display their current content. *)
+      immediately display not yet processed instructions. *)
+
+  val redraw : t -> unit
+  (** [show vp] forces the viewport [vp] and all its children to
+      immediately redraw all their current content. *)
 
   val get_backend : t -> Backend.t
   (** [get_backend vp] returns the backend associated to [vp], if vp is
@@ -1037,7 +1064,7 @@ sig
   (** [grid parent nx ny] returns [vp] an array of [nx] * [ny]
       sub-viewports of [parent]  arranged in a grid of [nx] columns and
       [ny] rows.  The bottom left viewport is [vp.(0).(0)], the one to
-      its right (resp. abobve) is [vp.(1).(0)] (resp. [vp.(0).(1)]).
+      its right (resp. above) is [vp.(1).(0)] (resp. [vp.(0).(1)]).
 
       @param syncs (cx, cy, rx, ry) where [cx] (resp. [cy]) says whether
       to synchronize the X-axis (resp. the [Y-axis]) along the columns
@@ -1180,7 +1207,7 @@ sig
     ?pos:Backend.text_position ->
     string -> Matrix.rectangle
   (** [text_extents vp text] returns the extents of [text] as displayed
-      by !{Archimedes.Viewport.text}.
+      by {!Archimedes.Viewport.text}.
 
       @param coord the coordinate system in which the extents will be
       given. Beware that as soon a coordinate system changes, the
@@ -1314,13 +1341,18 @@ sig
       close (in relative measure).  A cost [<= 0.] means one is satisfied
       with drawing straight lines connecting the three points. *)
 
-  val xy : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
+  val xy : ?tlog:bool -> ?fn0:float -> ?n:int ->
+    ?strategy:strategy -> ?cost:cost ->
     (float -> float * float) -> float -> float -> float array * float array
   (** [xy f t1 t2] samples the parametric function [f] on the
       interval going from [t1] to [t2].  Returns a list of the points in
       the sample.
 
       @param tlog do we need to step in a logarithmic way ?
+
+      @param fn0 fraction of [n] defining the number of steps for the
+      initial sampling of the function (that will later be
+      refined). Must be [0 < fn0 <= 1]. Default: [0.1].
 
       @param min_step don't increment precision more than this threshold
 
@@ -1330,7 +1362,8 @@ sig
       @param cost a customized cost.
   *)
 
-  val x : ?tlog:bool -> ?n:int -> ?strategy:strategy -> ?cost:cost ->
+  val x : ?tlog:bool -> ?fn0:float -> ?n:int ->
+    ?strategy:strategy -> ?cost:cost ->
     (float -> float) -> float -> float -> float array * float array
   (** [x f x1 x2] same as {!Sampler.xy} but for the scalar function [f]
       on the interval going from [x1] to [x2]. *)
@@ -1662,7 +1695,7 @@ type style =
 | `HBars of float ]
 
 (** Plotting functions. *)
-val fx : Viewport.t -> ?tlog:bool -> ?n:int ->
+val fx : Viewport.t -> ?tlog:bool -> ?fn0:float -> ?n:int ->
   ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
   ?style:[`Lines | `Linesmarkers of string | `Markers of string ] ->
   ?base:(float -> float) -> ?fill:bool -> ?fillcolor:Color.t ->
@@ -1677,11 +1710,14 @@ val fx : Viewport.t -> ?tlog:bool -> ?n:int ->
     @param base the second function for delimiting the filling
     region.  Default: the identically zero function.
 
+    @param fn0 the fraction of the maximum number of function
+    evaluations used to create an initial sampling of the function
+    that will later be refined by the adaptive autosampling. Default: [0.1].
     @param n the maximum number of function evaluations.  Default: [100].
     @param strategy see {!Sampler.strategy}.
     @param cost see {!Sampler.cost}. *)
 
-val xyf : Viewport.t -> ?tlog:bool -> ?n:int ->
+val xyf : Viewport.t -> ?tlog:bool -> ?fn0:float -> ?n:int ->
   ?strategy:Sampler.strategy -> ?cost:Sampler.cost ->
   ?style:[`Lines | `Linesmarkers of string | `Markers of string ] ->
   ?fill:bool -> ?fillcolor:Color.t ->
@@ -1840,9 +1876,8 @@ module Piechart :
 sig
   type style =
   | Flat          (** A simple circle separated in regions *)
-  | Separated     (** The regions are separated by a gap *)
-  | HighlightFlat (** One of the regions is separated by a gap, and so
-                      highlighted toward the others *)
+  | Highlight of string list (** The named region is separated by a gap, and so
+                                 highlighted toward the others *)
   | Relief        (** A simple 3D pie *)
 
   type colorscheme =
@@ -1864,17 +1899,22 @@ sig
         elements. *)
 
   type keyplacement =
-  | Rectangle (** A rectangle containing the color followed by the label
-                  of each data *)
-  | OverPie   (** The labels are drawn directly over the data *)
-  | Outer     (** The labels are drawn around the pie, next to the data they
-                  point out *)
+  | NoKey              (** No key at all *)
+  | Rectangle          (** A rectangle containing the color followed by the
+                           label of each data *)
+  | OverPie            (** The labels are drawn directly over the data *)
+  | Outer              (** The labels are drawn around the pie, next to the
+                           data they point out *)
+  | Selective of float (** Outer when the angle formed by a region is lower
+                           than the given angle (in radians). *)
 
   type keylabels =
-  | Key          (** Just the name of the data *)
+  | Label        (** Just the name of the data *)
   | WithValues   (** The name followed by the value between parentheses *)
-  | WithProcents (** The name followed by the procent among all data between
+  | WithPercents (** The name followed by the percentage among all data between
                      parentheses *)
+  | OnlyValues   (** Only the value *)
+  | OnlyPercents (** Only the percentage *)
   | CustomLabels of (string -> float -> float -> string)
   (** A custom label made of the name, the value and the percentage. *)
 
@@ -1910,7 +1950,7 @@ sig
   }
 
   val multilevel : ?style:style -> ?colorscheme:colorscheme ->
-    ?keyplacement:keyplacement -> ?keylabels:keylabels ->
+    ?keylabels:keylabels ->
     ?x0:float -> ?y0:float -> ?xend:float -> ?yend:float ->
     Viewport.t -> multidata list -> unit
   (** [multilevel vp data] draws a multilevel pie chart on [vp]. The
@@ -1924,9 +1964,6 @@ sig
       in the "Default" way, children colors are derived from their
       parent color and their value. Inner levels (those who contains
       only one data) are filled with blank
-
-      @param keyplacement default is OverPie, this is usually the better
-      way to visualize data over a multilevel pie chart
 
       @param keylabels default is Key, because the color scheme gives an
       idea of the values, it is preferable to save space by hiding the

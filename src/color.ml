@@ -20,16 +20,15 @@ let int c =
   rgb (float r /. 255.) (float g /. 255.) (float b /. 255.)
 
 let hue h =
-  let f, hi = modf (h /. 60.) in
-  match hi with
+  let f, hi = modf (abs_float h /. 60.) in
+  match mod_float hi 6. with
   | 0. -> {r = 1.; g = f; b = 0.; a = 1.}
   | 1. -> {r = (1. -. f); g = 1.; b = 0.; a = 1.}
   | 2. -> {r = 0.; g = 1.; b = f; a = 1.}
   | 3. -> {r = 0.; g = (1. -. f); b = 1.; a = 1.}
   | 4. -> {r = f; g = 0.; b = 1.; a = 1.}
   | 5. -> {r = 1.; g = 0.; b = (1. -. f); a = 1.}
-  | _ -> invalid_arg
-    (sprintf "Archimedes.Color.hue: hue not in range; h=%g" h)
+  | _ -> assert false
 
 let r t = t.r
 
@@ -151,6 +150,63 @@ let silver = {r = 0.752941176470588225; g = 0.752941176470588225;
 let trolley_grey = {r = 0.501960784313725483; g = 0.501960784313725483;
                     b = 0.501960784313725483; a = 1. }
 
+let colors = [
+  black;
+  red;
+  green;
+  blue;
+  yellow;
+  magenta;
+  cyan;
+  white;
+  dark_slate_grey;
+  deep_sky_blue;
+  dodger_blue;
+  aquamarine;
+  light_blue;
+  medium_blue;
+  navy_blue;
+  royal_blue;
+  burlywood;
+  chocolate;
+  tan;
+  dark_green;
+  dark_olive_green;
+  forest_green;
+  green_yellow;
+  sea_green;
+  dark_orange;
+  peach_puff;
+  coral;
+  orange;
+  hot_pink;
+  indian_red;
+  light_pink;
+  misty_rose;
+  orange_red;
+  firebrick;
+  dark_orchid;
+  lavender_blush;
+  plum;
+  orchid;
+  purple;
+  thistle;
+  antique_white;
+  old_lace;
+  ivory;
+  linen;
+  wheat;
+  white_smoke;
+  lemon_chiffon;
+  light_goldenrod;
+  cornsilk;
+  gold;
+  light_gray;
+  gainsboro;
+  silver;
+  trolley_grey
+]
+
 type operator =
     Over
   | Source
@@ -236,3 +292,22 @@ let add ?(op=Over) init newc =
    g = merge init.g newc.g;
    b = merge init.b newc.b;
    a = alpha}
+
+let lighten c v =
+  {r = c.r +. (1. -. c.r) *. v;
+   g = c.g +. (1. -. c.g) *. v;
+   b = c.b +. (1. -. c.b) *. v;
+   a = c.a}
+
+let darken c v =
+  {r = c.r *. v;
+   g = c.g *. v;
+   b = c.b *. v;
+   a = c.a}
+
+let highest_contrast_bw c =
+  (*
+    http://stackoverflow.com/questions/3942878/
+    how-to-decide-font-color-in-white-or-black-depending-on-background-color
+  *)
+  if luma c > 69. /. 255. then black else white

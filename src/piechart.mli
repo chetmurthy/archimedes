@@ -1,9 +1,8 @@
 
 type style =
 | Flat          (** A simple circle separated in regions *)
-| Separated     (** The regions are separated by a gap *)
-| HighlightFlat (** One of the regions is separated by a gap, and so
-                    highlighted toward the others *)
+| Highlight of string list (** The named region is separated by a gap, and so
+                               highlighted toward the others *)
 | Relief        (** A simple 3D pie *)
 
 type colorscheme =
@@ -25,17 +24,22 @@ type colorscheme =
       elements. *)
 
 type keyplacement =
-| Rectangle (** A rectangle containing the color followed by the label
-                of each data *)
-| OverPie   (** The labels are drawn directly over the data *)
-| Outer     (** The labels are drawn around the pie, next to the data they
-                point out *)
+| NoKey              (** No key at all *)
+| Rectangle          (** A rectangle containing the color followed by the
+                         label of each data *)
+| OverPie            (** The labels are drawn directly over the data *)
+| Outer              (** The labels are drawn around the pie, next to the
+                         data they point out *)
+| Selective of float (** Outer when the angle formed by a region is lower
+                         than the given angle (in radians). *)
 
 type keylabels =
-| Key          (** Just the name of the data *)
+| Label        (** Just the name of the data *)
 | WithValues   (** The name followed by the value between parentheses *)
-| WithProcents (** The name followed by the procent among all data between
+| WithPercents (** The name followed by the percentage among all data between
                    parentheses *)
+| OnlyValues   (** Only the value *)
+| OnlyPercents (** Only the percentage *)
 | CustomLabels of (string -> float -> float -> string)
 (** A custom label made of the name, the value and the percentage. *)
 
@@ -71,7 +75,7 @@ type multidata = {
 }
 
 val multilevel : ?style:style -> ?colorscheme:colorscheme ->
-  ?keyplacement:keyplacement -> ?keylabels:keylabels ->
+  ?keylabels:keylabels ->
   ?x0:float -> ?y0:float -> ?xend:float -> ?yend:float ->
   Viewport.t -> multidata list -> unit
 (** [multilevel vp data] draws a multilevel pie chart on [vp]. The
@@ -85,9 +89,6 @@ val multilevel : ?style:style -> ?colorscheme:colorscheme ->
     in the "Default" way, children colors are derived from their
     parent color and their value. Inner levels (those who contains
     only one data) are filled with blank
-
-    @param keyplacement default is OverPie, this is usually the better
-    way to visualize data over a multilevel pie chart
 
     @param keylabels default is Key, because the color scheme gives an
     idea of the values, it is preferable to save space by hiding the

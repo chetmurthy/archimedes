@@ -1,6 +1,6 @@
 (** A 2D plotting library with various backends.
 
-    @version 0.4.14
+    @version 0.4.17
     @author Christophe Troestler
     @author Pierre Hauweele
     @author Fabian Pijcke

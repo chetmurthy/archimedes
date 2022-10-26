@@ -22,8 +22,8 @@ val int : int -> t
     It is the form used by [Graphics]. *)
 
 val hue : float -> t
-(** [hue h] returns a color of given hue [h] in the interval \[0 : 360.\[
-    and of maximal luminance. *)
+(** [hue h] returns a color of given hue [h] in the interval \[0 .. 360.\[
+    ([h] is reduced modulo 360.) and of maximal luminance. *)
 
 val r : t -> float
 (** Returns the red component of a color.*)
@@ -59,6 +59,9 @@ val magenta : t
 val cyan : t
 val white : t
 val dark_slate_grey : t
+
+val colors : t list
+(** The list of all predefined colors. *)
 
 (** {4 Shades of Blue} *)
 
@@ -132,7 +135,6 @@ val gainsboro : t
 val silver : t
 val trolley_grey : t
 
-
 (** {3 Merging colors} *)
 
 (** Different ways of merging colors.  See
@@ -177,6 +179,16 @@ val add : ?op:operator -> t -> t -> t
 (** Adds the first color to the second color, according to the
     operator [op] (default : [Over]).*)
 
-(* TODO add lighten function *)
+(** {3 Variations of a given color} *)
 
+val lighten : t -> float -> t
+(** [lighten c v] Lighten the color [c] of [v] percent. 0 corresponds to
+    the same color, 1 corresponds to the white color. *)
 
+val darken : t -> float -> t
+(** [darken c v] Darken the color [c] of [v] percent. 0 correspond to the
+    same color, 1 corresponds to the black color. *)
+
+val highest_contrast_bw : t -> t
+(** returns black or white depending on which of the two is better to
+    write on the given color. *)
